@@ -1,4 +1,42 @@
-This is an Expo/React Native mobile application. Prioritize mobile-first patterns, performance, and cross-platform compatibility.
+This is an Expo/React Native mobile application (Seenzo). Prioritize mobile-first patterns, performance, and cross-platform compatibility.
+
+## Autonomous workflow
+
+- Work autonomously within the scope of the request.
+- Do not ask unnecessary questions or request confirmation for routine implementation decisions.
+- Make reasonable technical decisions using best practices.
+- Create and modify files, install necessary free dependencies, run tests, and fix errors independently.
+- If a routine error occurs, investigate and resolve it before reporting.
+- Do not stop after planning. Complete the requested task and verify it.
+- Keep changes focused on the requested feature.
+- Never implement unrelated features without permission.
+
+## Ask for approval only when
+
+- A paid API, subscription, or billable cloud resource is required.
+- A destructive operation could cause data loss.
+- Production data, credentials, or security-sensitive settings would be affected.
+- A major architectural change conflicts with existing project decisions.
+- Publishing, deployment, or an external irreversible action is required.
+- Essential product requirements are genuinely ambiguous.
+
+## Project rules
+
+- React Native + Expo, JavaScript/JSX only. Do not add TypeScript source files.
+- Maintain Android and iOS compatibility. Do not write platform-only UI.
+- English UI initially, with i18n support for future languages. User-facing text uses translation keys.
+- Prefer free services and libraries.
+- Keep the architecture simple and maintainable.
+- Do not expose secrets or API credentials.
+- Preserve working functionality.
+- Routes live in `src/app/`. Keep components, hooks, and utils outside `src/app/`.
+
+## Communication
+
+- Keep responses concise.
+- Do not ask what to do next during an assigned task.
+- At completion, briefly summarize changes, tests, and unresolved issues.
+- Stop after completing the requested task.
 
 ## Expo has changed — do not trust your training data
 
@@ -16,16 +54,15 @@ Use `bunx` instead of `npx` if the project uses bun (`bun.lock` present).
 npx expo install <package>  # ALWAYS use instead of npm/yarn/pnpm/bun add — resolves SDK-compatible versions
 npx expo start              # start the dev server
 npx expo lint               # lint
-npx tsc --noEmit            # typecheck
 npx expo-doctor             # diagnose dependency and config issues
 npx expo install --fix      # fix incompatible package versions
 ```
 
-Run lint and typecheck before declaring any task done.
+Run lint before declaring a task done. This project is JavaScript only; do not add a TypeScript typecheck step unless TypeScript is introduced later.
 
 ## Navigation & Routing
 
-- Use **Expo Router** for all navigation. Routes live in `src/app/` — every file there is a screen, `_layout.tsx` files define navigators. Keep non-route code (components, hooks, utils) outside `src/app/`.
+- Use **Expo Router** for all navigation. Routes live in `src/app/` — every file there is a screen, `_layout.js` files define navigators. Keep non-route code (components, hooks, utils) outside `src/app/`.
 - Import `Link`, `router`, and `useLocalSearchParams` from `expo-router`.
 - Docs: https://docs.expo.dev/router/introduction.md
 
@@ -34,8 +71,8 @@ Run lint and typecheck before declaring any task done.
 Use EAS to build, sign, and submit the app in the cloud (`eas build`, `eas submit`) and to ship over-the-air updates (`eas update`) — no local Xcode or Android Studio required. Run EAS CLI as `bunx eas-cli <command>` in Bun projects, or `npx eas-cli@latest <command>` otherwise; substitute that for bare `eas` in docs examples.
 Docs: https://docs.expo.dev/eas/index.md
 
-## Rules
+## Native and dependencies
 
 - If `ios/` and `android/` directories do not exist, they are generated (Continuous Native Generation). Never create or edit them by hand — configure native behavior in `app.json` and config plugins.
 - Expo Go only includes its bundled native modules. After adding a library with native code, the app needs a development build: `npx expo run:ios|android` locally, or `eas build --profile development`.
-- Prefer recommended Expo modules over third-party libraries, and check your available skills before adding dependencies. Docs: https://docs.expo.dev/versions/latest/index.md
+- Prefer recommended Expo modules over third-party libraries. Docs: https://docs.expo.dev/versions/latest/index.md

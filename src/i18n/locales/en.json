@@ -1,0 +1,27 @@
+{
+  "tabs": {
+    "home": "Home",
+    "discover": "Discover",
+    "library": "Library",
+    "profile": "Profile"
+  },
+  "home": {
+    "title": "Home",
+    "placeholder": "Your watch activity will appear here."
+  },
+  "discover": {
+    "title": "Discover",
+    "placeholder": "Browse movies and TV shows here."
+  },
+  "library": {
+    "title": "Library",
+    "placeholder": "Your watchlists and progress will appear here."
+  },
+  "profile": {
+    "title": "Profile",
+    "placeholder": "Your profile settings will appear here."
+  },
+  "common": {
+    "appName": "Seenzo"
+  }
+}
