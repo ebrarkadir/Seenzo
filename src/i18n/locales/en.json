@@ -1,27 +1,312 @@
 {
+  "common": {
+    "appName": "Seenzo",
+    "back": "Back",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "remove": "Remove",
+    "clear": "Clear search",
+    "dismiss": "Dismiss",
+    "episodeCode": "S{{season}}E{{episode}}",
+    "minutes": "{{count}} min",
+    "yourRating": "Your rating",
+    "ratingValue": "{{rating}}/10"
+  },
   "tabs": {
-    "home": "Home",
+    "tv": "TV Shows",
+    "movies": "Movies",
+    "watchlist": "Watchlist",
     "discover": "Discover",
-    "library": "Library",
     "profile": "Profile"
-  },
-  "home": {
-    "title": "Home",
-    "placeholder": "Your watch activity will appear here."
-  },
-  "discover": {
-    "title": "Discover",
-    "placeholder": "Browse movies and TV shows here."
-  },
-  "library": {
-    "title": "Library",
-    "placeholder": "Your watchlists and progress will appear here."
   },
   "profile": {
     "title": "Profile",
-    "placeholder": "Your profile settings will appear here."
+    "open": "Open profile",
+    "localNote": "Your tracking stays on this device.",
+    "userName": "Your profile",
+    "statShows": "TV shows",
+    "statMovies": "Watched movies",
+    "statEpisodes": "Watched episodes",
+    "myShows": "My TV shows",
+    "myShowsMeta": "{{count}} tracked",
+    "watchedMovies": "Watched movies",
+    "watchedMoviesMeta": "{{count}} watched",
+    "demoKicker": "Development",
+    "demoTitle": "Demo tools",
+    "demoNote": "These controls are for testing a new user and a populated library. Remove them before release.",
+    "demoOn": "Demo data is loaded.",
+    "demoOff": "You are using your own lists.",
+    "loadDemo": "Load demo data",
+    "clearData": "Clear my local data",
+    "restartOnboarding": "Restart onboarding",
+    "loadDemoTitle": "Replace your lists?",
+    "loadDemoMessage": "This replaces your current shows and movies with sample tracking data.",
+    "clearTitle": "Clear local data?",
+    "clearMessage": "This removes your shows, movies, ratings, and watched episodes from this device.",
+    "restartTitle": "Show onboarding again?",
+    "restartMessage": "Your current lists stay until you change them. Onboarding will open next."
   },
-  "common": {
-    "appName": "Seenzo"
+  "onboarding": {
+    "welcomeTitle": "Welcome to Seenzo",
+    "welcomeBody": "Track the series you are watching, the movies you want to see, and the episodes you have finished.",
+    "getStarted": "Get started",
+    "tryDemo": "Try demo",
+    "tryDemoHint": "Loads sample shows and movies so you can explore. A new account stays empty until you add something yourself.",
+    "showsTitle": "Add TV shows",
+    "showsBody": "Search the sample catalog and set how far you have watched. You can skip this step.",
+    "moviesTitle": "Add movies",
+    "moviesBody": "Save movies you want to watch. You can skip this step.",
+    "searchShows": "Search TV shows",
+    "searchMovies": "Search movies",
+    "continue": "Continue",
+    "skip": "Skip",
+    "finish": "Finish",
+    "notStarted": "Not started",
+    "watchedThrough": "Watched through {{code}}, {{title}}",
+    "progressTitle": "Set your progress",
+    "selected": "{{count}} selected",
+    "emptySearch": "No matches."
+  },
+  "tv": {
+    "notFound": "This show is not in the catalog.",
+    "notTracking": "Not in your list",
+    "notStarted": "Not started",
+    "noReleased": "No released episodes yet",
+    "next": "Next {{code}} · {{title}}",
+    "stoppedAt": "Stopped at {{code}}",
+    "progress": "{{watched}} of {{total}} episodes",
+    "markWatched": "Mark watched",
+    "startWatching": "Start watching",
+    "resume": "Resume",
+    "undo": "Undo",
+    "undoMessage": "Marked {{title}} watched",
+    "actionA11y": "{{action}}, {{title}}",
+    "openShow": "{{title}}, {{status}}",
+    "emptyTitle": "No shows yet",
+    "emptyBody": "Add a series you are watching, or browse the catalog to start your list.",
+    "addFirstShow": "Add your first show",
+    "discoverShows": "Discover TV shows",
+    "segment": {
+      "watching": "Watching",
+      "watchlist": "Watchlist"
+    },
+    "upcomingSection": "Upcoming",
+    "seeAll": "See all",
+    "season": "Season {{number}}",
+    "upcoming": "Upcoming {{date}}",
+    "unreleasedNote": "Upcoming episodes stay locked until their air date.",
+    "removeShow": "Remove from my shows",
+    "status": {
+      "watching": "Watching",
+      "caughtUp": "Caught up",
+      "completed": "Completed",
+      "dropped": "Dropped",
+      "plan": "Plan to watch"
+    },
+    "release": {
+      "ongoing": "Ongoing",
+      "ended": "Ended",
+      "returning": "Returning"
+    }
+  },
+  "movies": {
+    "toWatch": "To watch",
+    "watched": "Watched",
+    "markWatched": "Mark watched",
+    "markUnwatched": "Mark unwatched",
+    "removeFromList": "Remove from list",
+    "discover": "Discover movies",
+    "emptyTitle": "No movies yet",
+    "emptyBody": "Save a movie you want to watch, or mark one you have already seen.",
+    "watchedEmptyTitle": "Nothing watched yet",
+    "watchedEmptyBody": "Movies you mark as watched will appear here.",
+    "openMovie": "Open {{title}}",
+    "notSaved": "Not in your list",
+    "notFound": "This movie is not in the catalog."
+  },
+  "watchlist": {
+    "shows": "TV Shows",
+    "movies": "Movies",
+    "showsNote": "Series you plan to start.",
+    "moviesNote": "Movies you have not watched yet.",
+    "emptyShowsTitle": "No shows planned",
+    "emptyShowsBody": "Series you want to start will show up here.",
+    "emptyMoviesTitle": "No movies planned",
+    "emptyMoviesBody": "Movies you want to watch will show up here."
+  },
+  "discover": {
+    "search": "Search the catalog",
+    "shows": "TV Shows",
+    "movies": "Movies",
+    "empty": "No matches.",
+    "emptyBody": "Try another title or switch between TV shows and movies.",
+    "addShow": "Add show",
+    "addMovie": "Add movie",
+    "inLibrary": "In your list",
+    "open": "Open"
+  },
+  "upcoming": {
+    "title": "Upcoming",
+    "tba": "TBA",
+    "newEpisode": "New episode",
+    "newSeason": "New season",
+    "empty": "Nothing upcoming matches this filter.",
+    "filters": {
+      "all": "All",
+      "episode": "New episodes",
+      "season": "New seasons"
+    }
+  },
+  "archive": {
+    "showsTitle": "My TV shows",
+    "moviesTitle": "Watched movies",
+    "all": "All",
+    "emptyShows": "No shows in this filter",
+    "emptyShowsBody": "Tracked series will appear here.",
+    "emptyMovies": "No watched movies",
+    "emptyMoviesBody": "Movies you finish will appear here."
+  },
+  "catalog": {
+    "genres": {
+      "drama": "Drama",
+      "scienceFiction": "Science fiction",
+      "thriller": "Thriller",
+      "romance": "Romance",
+      "mystery": "Mystery",
+      "adventure": "Adventure"
+    },
+    "shows": {
+      "harborLights": "Harbor Lights",
+      "northline": "Northline",
+      "glassArchive": "The Glass Archive",
+      "emberCourt": "Ember Court",
+      "kinfolk": "Kinfolk",
+      "paperSaints": "Paper Saints",
+      "afterglow": "Afterglow",
+      "neonDistrict": "Neon District",
+      "wren": "Wren",
+      "midnightCensus": "Midnight Census"
+    },
+    "movies": {
+      "violetMeridian": "Violet Meridian",
+      "lowOrbit": "Low Orbit",
+      "saltSilver": "Salt & Silver",
+      "goldenHour": "Golden Hour",
+      "lastProjectionist": "The Last Projectionist",
+      "riverOfStatic": "River of Static",
+      "winterSignal": "Winter Signal"
+    },
+    "synopsis": {
+      "harborLights": "A harbor inspector follows a missing-cargo case that keeps pulling her back to the night shift.",
+      "northline": "A remote rail town unravels when the winter line starts running trains that were never scheduled.",
+      "glassArchive": "Researchers in a sealed library discover that the catalog is changing the people who read it.",
+      "emberCourt": "An ended family saga about a fading gallery and the last heirs who refuse to sell it.",
+      "kinfolk": "Three siblings return to a family farm and find the old harvest rules still in force.",
+      "paperSaints": "A choir school hides a ledger of favors that every student is expected to repay.",
+      "afterglow": "Night-shift photographers chase a light that appears over the city only after midnight.",
+      "neonDistrict": "Couriers in a flooded entertainment district trade secrets between blackouts.",
+      "wren": "A completed nature mystery about a researcher who maps a migration that should not exist.",
+      "midnightCensus": "Night clerks count the residents of a hospital wing that never appears on the day roster.",
+      "violetMeridian": "A pianist returns home and finds her old duet partner living under another name.",
+      "lowOrbit": "A repair crew on a quiet satellite discovers a passenger who was never on the manifest.",
+      "saltSilver": "Two estranged divers search a closed mine for a camera that recorded their last descent.",
+      "goldenHour": "A travel writer and a projectionist spend one summer restoring a seaside cinema.",
+      "lastProjectionist": "The final employee of a closing movie palace decides which print is worth saving.",
+      "riverOfStatic": "A radio host follows a signal that only plays recordings of places that no longer exist.",
+      "winterSignal": "A cartographer crosses a frozen range to deliver a map nobody admits they ordered."
+    },
+    "ep": {
+      "harborLights": {
+        "s1e1": "The Channel",
+        "s1e2": "Night Shift",
+        "s1e3": "Salt on the Glass",
+        "s1e4": "Missing Tender",
+        "s1e5": "Red Buoy",
+        "s1e6": "The Quiet Dock",
+        "s1e7": "Winter Schedule",
+        "s1e8": "Blackout Tide"
+      },
+      "northline": {
+        "s1e1": "White Mile",
+        "s1e2": "Depot",
+        "s1e3": "The Switch",
+        "s1e4": "Frozen Ledger",
+        "s1e5": "Southbound",
+        "s1e6": "Last Platform",
+        "s2e1": "Thaw",
+        "s2e2": "Signal Fire",
+        "s2e3": "Mile Marker",
+        "s2e4": "Open Water",
+        "s2e5": "Return Ticket",
+        "s2e6": "High Summer"
+      },
+      "glassArchive": {
+        "s1e1": "Index of Names",
+        "s1e2": "Reading Room",
+        "s1e3": "The Missing Volume",
+        "s1e4": "Marginalia",
+        "s1e5": "Closed Stacks",
+        "s1e6": "After Hours",
+        "s2e1": "Acquisition"
+      },
+      "emberCourt": {
+        "s1e1": "First Spark",
+        "s1e2": "The Gallery",
+        "s1e3": "Ash Season",
+        "s1e4": "Heirloom",
+        "s1e5": "Last Sitting",
+        "s1e6": "Embers"
+      },
+      "kinfolk": {
+        "s1e1": "Homecoming",
+        "s1e2": "The Orchard",
+        "s1e3": "Supper",
+        "s1e4": "Fault Line",
+        "s1e5": "Harvest",
+        "s1e6": "Departure",
+        "s1e7": "Winter Room",
+        "s1e8": "Kin"
+      },
+      "paperSaints": {
+        "s1e1": "Fold",
+        "s1e2": "Margin",
+        "s1e3": "Vespers",
+        "s1e4": "Blue Ink",
+        "s1e5": "Procession",
+        "s1e6": "Unbound"
+      },
+      "afterglow": {
+        "s1e1": "First Light",
+        "s1e2": "Heat",
+        "s1e3": "Long Exposure",
+        "s1e4": "Sodium",
+        "s1e5": "Afterimage",
+        "s1e6": "Dawn Shift"
+      },
+      "neonDistrict": {
+        "s1e1": "Grid",
+        "s1e2": "Rain Market",
+        "s1e3": "Third Rail",
+        "s1e4": "Violet Noise",
+        "s1e5": "Curfew",
+        "s1e6": "Open Frequency"
+      },
+      "wren": {
+        "s1e1": "Nest",
+        "s1e2": "Glasswing",
+        "s1e3": "Migration",
+        "s1e4": "Hollow",
+        "s1e5": "Perch",
+        "s1e6": "South Wind"
+      },
+      "midnightCensus": {
+        "s1e1": "Roll Call",
+        "s1e2": "The Empty Ward",
+        "s1e3": "Ledger",
+        "s1e4": "Night Clerk",
+        "s1e5": "Headcount",
+        "s1e6": "Closing Time"
+      }
+    }
   }
 }
