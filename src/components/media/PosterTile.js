@@ -1,8 +1,9 @@
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
+import Artwork from '../../services/artwork/Artwork';
 import { colors, radii, spacing, typography } from '../../theme';
-import FavoriteButton from './FavoriteButton';
+import BookmarkButton from './BookmarkButton';
 
 export function posterSize(windowWidth) {
   const gap = spacing.sm + 4;
@@ -12,6 +13,7 @@ export function posterSize(windowWidth) {
 
 export default function PosterTile({
   uri,
+  posterPath,
   title,
   meta,
   width,
@@ -25,15 +27,15 @@ export default function PosterTile({
   accessibilityState,
   quickLabel,
   onQuick,
-  favorite,
-  onFavorite,
-  favoriteLabel,
+  watchlisted,
+  onBookmark,
+  bookmarkLabel,
 }) {
   return (
     <View style={{ width }}>
       <Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel || title} accessibilityState={accessibilityState} onPress={onPress}>
         <View>
-          <Image source={{ uri }} resizeMode="cover" style={[styles.image, { width, height }]} />
+          <Artwork uri={uri} posterPath={posterPath} width={width} height={height} />
           {status ? <View style={[styles.indicator, { backgroundColor: colors.status[status] || colors.textMuted }]} /> : null}
           {selected || selectable ? (
             <View style={[styles.check, !selected && styles.checkIdle]}>
@@ -55,8 +57,8 @@ export default function PosterTile({
           </Text>
         ) : null}
       </Pressable>
-      {onFavorite ? (
-        <FavoriteButton active={favorite} label={favoriteLabel} onPress={onFavorite} style={styles.favorite} />
+      {onBookmark ? (
+        <BookmarkButton active={watchlisted} label={bookmarkLabel} onPress={onBookmark} style={styles.bookmark} />
       ) : null}
       {onQuick ? (
         <Pressable
@@ -125,7 +127,7 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.text,
   },
-  favorite: {
+  bookmark: {
     position: 'absolute',
     top: spacing.sm,
     right: spacing.sm,

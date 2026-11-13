@@ -6,18 +6,18 @@ export function dateKey(date = new Date()) {
 }
 
 export function listEpisodes(show) {
-  return show.seasons
-    .flatMap((season) => season.episodes)
+  return (show?.seasons || [])
+    .flatMap((season) => season.episodes || [])
     .slice()
     .sort((a, b) => a.season - b.season || a.number - b.number);
 }
 
 export function isReleased(episode, today = dateKey()) {
-  return episode.airDate <= today;
+  return Boolean(episode?.airDate) && episode.airDate <= today;
 }
 
 export function releasedEpisodes(show, today = dateKey()) {
-  return listEpisodes(show).filter((episode) => isReleased(episode, today));
+  return listEpisodes(show).filter((episode) => episode.season !== 0 && isReleased(episode, today));
 }
 
 export function deriveShowStatus(show, entry, today = dateKey()) {
@@ -77,7 +77,7 @@ export function upcomingForShows(pairs, today = dateKey()) {
         return;
       }
       const seasonBlock = show.seasons.find((season) => season.season === episode.season);
-      const seasonStarted = seasonBlock.episodes.some((item) => item.airDate && item.airDate <= today);
+      const seasonStarted = (seasonBlock?.episodes || []).some((item) => item.airDate && item.airDate <= today);
       items.push({
         id: episode.id,
         show,

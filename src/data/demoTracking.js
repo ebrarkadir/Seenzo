@@ -50,15 +50,6 @@ export const demoTracking = {
     'golden-hour': { saved: true, watched: true, rating: 8 },
     'last-projectionist': { saved: true, watched: true, rating: 9 },
   },
-  favorites: {
-    shows: {
-      'harbor-lights': true,
-      'glass-archive': true,
-    },
-    movies: {
-      'golden-hour': true,
-    },
-  },
   episodeRatings: {
     [episodeId('harbor-lights', 1, 4)]: 9,
   },

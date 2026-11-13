@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -7,8 +7,11 @@ import { useTranslation } from 'react-i18next';
 import PrimaryButton from '../components/ui/PrimaryButton';
 import SearchField from '../components/ui/SearchField';
 import PosterTile, { posterSize } from '../components/media/PosterTile';
-import { movies, shows } from '../data/catalog';
+import { episodeTitle, mediaTitle } from '../data/labels';
+import { rememberMovie, rememberShow } from '../data/mediaLibrary';
 import { colors, radii, spacing, typography } from '../theme';
+import { getTraktConfigStatus } from '../services/trakt/config';
+import { hydrateShow, searchMoviesPage, searchShowsPage } from '../services/trakt/catalog';
 import { useTracking } from '../tracking/TrackingContext';
 import { episodeCode, releasedEpisodes } from '../tracking/status';
 
@@ -18,8 +21,37 @@ export default function OnboardingScreen() {
   const [query, setQuery] = useState('');
   const [selectedShows, setSelectedShows] = useState({});
   const [selectedMovies, setSelectedMovies] = useState({});
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState(null);
+  const config = getTraktConfigStatus();
+
+  useEffect(() => {
+    if (step === 1 || !config.ready) {
+      return undefined;
+    }
+    const text = query.trim();
+    if (text.length < 2) {
+      return undefined;
+    }
+    const timer = setTimeout(() => {
+      setSearching(true);
+      setSearchError(null);
+      const task = step === 2 ? searchShowsPage(text, 1) : searchMoviesPage(text, 1);
+      task
+        .then((result) => setResults(result.items))
+        .catch((requestError) => {
+          setResults([]);
+          setSearchError(requestError);
+        })
+        .finally(() => setSearching(false));
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [config.ready, query, step]);
 
   const finish = (movieIds) => {
+    Object.values(selectedShows).forEach((value) => rememberShow(value.show));
+    Object.values(selectedMovies).forEach((movie) => rememberMovie(movie));
     completeOnboarding({
       shows: Object.entries(selectedShows).map(([id, value]) => ({
         id,
@@ -48,33 +80,60 @@ export default function OnboardingScreen() {
       {step === 2 ? (
         <ShowStep
           query={query}
-          onQuery={setQuery}
+          onQuery={(text) => {
+            setQuery(text);
+            if (text.trim().length < 2) {
+              setResults([]);
+            }
+          }}
+          results={results}
+          searching={searching}
+          searchError={searchError}
+          configured={config.ready}
           selected={selectedShows}
-          onToggle={(show) => {
-            setSelectedShows((current) => {
-              const next = { ...current };
-              if (next[show.id]) {
+          onToggle={async (show) => {
+            if (selectedShows[show.id]) {
+              setSelectedShows((current) => {
+                const next = { ...current };
                 delete next[show.id];
-              } else {
-                next[show.id] = { throughEpisodeId: null };
+                return next;
+              });
+              return;
+            }
+            setSearching(true);
+            try {
+              const full = await hydrateShow(show.traktId);
+              if (!full) {
+                setSearchError({ code: 'invalid' });
+                return;
               }
-              return next;
-            });
+              rememberShow(full);
+              setSelectedShows((current) => ({
+                ...current,
+                [show.id]: { throughEpisodeId: null, show: full },
+              }));
+            } catch (requestError) {
+              setSearchError(requestError);
+            } finally {
+              setSearching(false);
+            }
           }}
           onProgress={(showId, throughEpisodeId) => {
             setSelectedShows((current) => ({
               ...current,
-              [showId]: { throughEpisodeId },
+              [showId]: { ...current[showId], throughEpisodeId },
             }));
           }}
           onBack={() => setStep(1)}
           onSkip={() => {
             setSelectedShows({});
             setQuery('');
+            setResults([]);
             setStep(3);
           }}
           onContinue={() => {
             setQuery('');
+            setResults([]);
             setStep(3);
           }}
         />
@@ -82,7 +141,16 @@ export default function OnboardingScreen() {
       {step === 3 ? (
         <MovieStep
           query={query}
-          onQuery={setQuery}
+          onQuery={(text) => {
+            setQuery(text);
+            if (text.trim().length < 2) {
+              setResults([]);
+            }
+          }}
+          results={results}
+          searching={searching}
+          searchError={searchError}
+          configured={config.ready}
           selected={selectedMovies}
           onToggle={(movie) => {
             setSelectedMovies((current) => {
@@ -90,7 +158,8 @@ export default function OnboardingScreen() {
               if (next[movie.id]) {
                 delete next[movie.id];
               } else {
-                next[movie.id] = true;
+                rememberMovie(movie);
+                next[movie.id] = movie;
               }
               return next;
             });
@@ -118,15 +187,12 @@ function WelcomeStep({ onStart, onDemo }) {
   );
 }
 
-function ShowStep({ query, onQuery, selected, onToggle, onProgress, onBack, onSkip, onContinue }) {
+function ShowStep({ query, onQuery, results, searching, searchError, configured, selected, onToggle, onProgress, onBack, onSkip, onContinue }) {
   const { t } = useTranslation();
   const { width } = useWindowDimensions();
   const size = posterSize(width);
-  const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    return shows.filter((show) => t(show.titleKey).toLowerCase().includes(needle));
-  }, [query, t]);
-  const chosen = shows.filter((show) => selected[show.id]);
+  const filtered = results;
+  const chosen = Object.values(selected).map((value) => value.show).filter(Boolean);
 
   return (
     <View style={styles.step}>
@@ -142,9 +208,12 @@ function ShowStep({ query, onQuery, selected, onToggle, onProgress, onBack, onSk
             <Text style={styles.hero}>{t('onboarding.showsTitle')}</Text>
             <Text style={styles.body}>{t('onboarding.showsBody')}</Text>
             <SearchField value={query} onChangeText={onQuery} placeholder={t('onboarding.searchShows')} />
+            {searching ? <Text style={styles.empty}>{t('trakt.loading')}</Text> : null}
+            {searchError ? <Text style={styles.empty}>{t(`trakt.errors.${searchError.code || 'unknown'}`)}</Text> : null}
+            {!configured ? <Text style={styles.empty}>{t('trakt.notConfigured')}</Text> : null}
           </View>
         }
-        ListEmptyComponent={<Text style={styles.empty}>{t('onboarding.emptySearch')}</Text>}
+        ListEmptyComponent={query.trim().length < 2 ? <Text style={styles.empty}>{t('onboarding.searchPrompt')}</Text> : <Text style={styles.empty}>{t('onboarding.emptySearch')}</Text>}
         ListFooterComponent={
           chosen.length ? (
             <View style={styles.footerBlock}>
@@ -164,15 +233,15 @@ function ShowStep({ query, onQuery, selected, onToggle, onProgress, onBack, onSk
           const active = Boolean(selected[item.id]);
           return (
             <PosterTile
-              uri={item.poster}
-              title={t(item.titleKey)}
+              posterPath={item.posterPath}
+              title={item.title}
               width={size.width}
               height={size.height}
               selected={active}
               selectable
               onPress={() => onToggle(item)}
               accessibilityState={{ checked: active }}
-              accessibilityLabel={t(item.titleKey)}
+              accessibilityLabel={item.title}
             />
           );
         }}
@@ -196,7 +265,7 @@ function ProgressPicker({ show, throughEpisodeId, onChange }) {
 
   return (
     <View style={styles.progressCard}>
-      <Text style={styles.choiceTitle}>{t(show.titleKey)}</Text>
+      <Text style={styles.choiceTitle}>{mediaTitle(t, show)}</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
         <Chip
           label={t('onboarding.notStarted')}
@@ -211,7 +280,7 @@ function ProgressPicker({ show, throughEpisodeId, onChange }) {
               label={code}
               selected={throughEpisodeId === episode.id}
               onPress={() => onChange(episode.id)}
-              accessibilityLabel={t('onboarding.watchedThrough', { code, title: t(episode.titleKey) })}
+              accessibilityLabel={t('onboarding.watchedThrough', { code, title: episodeTitle(t, episode) })}
             />
           );
         })}
@@ -234,14 +303,11 @@ function Chip({ label, selected, onPress, accessibilityLabel }) {
   );
 }
 
-function MovieStep({ query, onQuery, selected, onToggle, onBack, onSkip, onFinish }) {
+function MovieStep({ query, onQuery, results, searching, searchError, configured, selected, onToggle, onBack, onSkip, onFinish }) {
   const { t } = useTranslation();
   const { width } = useWindowDimensions();
   const size = posterSize(width);
-  const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    return movies.filter((movie) => t(movie.titleKey).toLowerCase().includes(needle));
-  }, [query, t]);
+  const filtered = results;
   const count = Object.keys(selected).length;
 
   return (
@@ -258,23 +324,27 @@ function MovieStep({ query, onQuery, selected, onToggle, onBack, onSkip, onFinis
             <Text style={styles.hero}>{t('onboarding.moviesTitle')}</Text>
             <Text style={styles.body}>{t('onboarding.moviesBody')}</Text>
             <SearchField value={query} onChangeText={onQuery} placeholder={t('onboarding.searchMovies')} />
+            {searching ? <Text style={styles.empty}>{t('trakt.loading')}</Text> : null}
+            {searchError ? <Text style={styles.empty}>{t(`trakt.errors.${searchError.code || 'unknown'}`)}</Text> : null}
+            {!configured ? <Text style={styles.empty}>{t('trakt.notConfigured')}</Text> : null}
           </View>
         }
-        ListEmptyComponent={<Text style={styles.empty}>{t('onboarding.emptySearch')}</Text>}
+        ListEmptyComponent={query.trim().length < 2 ? <Text style={styles.empty}>{t('onboarding.searchPrompt')}</Text> : <Text style={styles.empty}>{t('onboarding.emptySearch')}</Text>}
         renderItem={({ item }) => {
           const active = Boolean(selected[item.id]);
           return (
             <PosterTile
               uri={item.poster}
-              title={t(item.titleKey)}
-              meta={String(item.year)}
+              posterPath={item.posterPath}
+              title={item.title}
+              meta={item.year ? String(item.year) : null}
               width={size.width}
               height={size.height}
               selected={active}
               selectable
               onPress={() => onToggle(item)}
               accessibilityState={{ checked: active }}
-              accessibilityLabel={t(item.titleKey)}
+              accessibilityLabel={item.title}
             />
           );
         }}

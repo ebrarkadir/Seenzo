@@ -2,7 +2,8 @@ import { useMemo } from 'react';
 import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 
-import { getMovie } from '../../data/catalog';
+import { mediaTitle } from '../../data/labels';
+import { resolveMovie, useMediaRevision } from '../../data/mediaLibrary';
 import { spacing } from '../../theme';
 import { useTracking } from '../../tracking/TrackingContext';
 import EmptyState from '../ui/EmptyState';
@@ -12,13 +13,17 @@ import PosterGrid from './PosterGrid';
 export default function WatchedMoviesGrid({ header, emptyTitle, emptyBody, emptyActionLabel, onEmptyAction }) {
   const { t } = useTranslation();
   const { movies } = useTracking();
+  const revision = useMediaRevision();
 
   const items = useMemo(() => {
+    if (revision < 0) {
+      return [];
+    }
     return Object.entries(movies)
-      .map(([id, entry]) => ({ id, movie: getMovie(id), entry }))
+      .map(([id, entry]) => ({ id, movie: resolveMovie(id), entry }))
       .filter((item) => item.movie && item.entry.watched)
-      .sort((a, b) => t(a.movie.titleKey).localeCompare(t(b.movie.titleKey)));
-  }, [movies, t]);
+      .sort((a, b) => mediaTitle(t, a.movie).localeCompare(mediaTitle(t, b.movie)));
+  }, [movies, revision, t]);
 
   return (
     <PosterGrid

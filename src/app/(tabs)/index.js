@@ -10,7 +10,8 @@ import SegmentedControl from '../../components/ui/SegmentedControl';
 import ShowCard from '../../components/tracking/ShowCard';
 import UpcomingRow from '../../components/tracking/UpcomingRow';
 import UndoBar from '../../components/tracking/UndoBar';
-import { getShow } from '../../data/catalog';
+import { mediaTitle } from '../../data/labels';
+import { resolveShow, useMediaRevision } from '../../data/mediaLibrary';
 import { colors, spacing, typography } from '../../theme';
 import { useTracking } from '../../tracking/TrackingContext';
 import { useUndoTimer } from '../../tracking/useUndoTimer';
@@ -19,25 +20,29 @@ import { deriveShowStatus, upcomingForShows } from '../../tracking/status';
 export default function TvShowsScreen() {
   const { t } = useTranslation();
   const { shows, undo, markNextWatched, setShowIntent, removeShow } = useTracking();
+  const revision = useMediaRevision();
   const [segment, setSegment] = useState('watching');
   useUndoTimer();
 
   const tracked = useMemo(() => {
+    if (revision < 0) {
+      return [];
+    }
     return Object.entries(shows)
-      .map(([id, entry]) => ({ show: getShow(id), entry }))
+      .map(([id, entry]) => ({ show: resolveShow(id), entry }))
       .filter((item) => item.show);
-  }, [shows]);
+  }, [revision, shows]);
 
   const watching = useMemo(() => {
     return tracked
       .filter((item) => deriveShowStatus(item.show, item.entry) === 'watching')
-      .sort((a, b) => t(a.show.titleKey).localeCompare(t(b.show.titleKey)));
+      .sort((a, b) => mediaTitle(t, a.show).localeCompare(mediaTitle(t, b.show)));
   }, [t, tracked]);
 
   const planned = useMemo(() => {
     return tracked
       .filter((item) => deriveShowStatus(item.show, item.entry) === 'plan')
-      .sort((a, b) => t(a.show.titleKey).localeCompare(t(b.show.titleKey)));
+      .sort((a, b) => mediaTitle(t, a.show).localeCompare(mediaTitle(t, b.show)));
   }, [t, tracked]);
 
   const upcomingAll = useMemo(() => upcomingForShows(tracked), [tracked]);

@@ -6,7 +6,8 @@ import { useTranslation } from 'react-i18next';
 import PosterGrid from '../../components/media/PosterGrid';
 import { ShowPoster } from '../../components/media/LibraryTiles';
 import EmptyState from '../../components/ui/EmptyState';
-import { getShow } from '../../data/catalog';
+import { mediaTitle } from '../../data/labels';
+import { resolveShow, useMediaRevision } from '../../data/mediaLibrary';
 import { colors, radii, spacing, typography } from '../../theme';
 import { useTracking } from '../../tracking/TrackingContext';
 import { deriveShowStatus } from '../../tracking/status';
@@ -16,16 +17,20 @@ const FILTERS = ['all', 'watching', 'caughtUp', 'completed', 'dropped'];
 export default function ShowArchiveScreen() {
   const { t } = useTranslation();
   const { shows } = useTracking();
+  const revision = useMediaRevision();
   const [filter, setFilter] = useState('all');
 
   const items = useMemo(() => {
+    if (revision < 0) {
+      return [];
+    }
     return Object.entries(shows)
-      .map(([id, entry]) => ({ id, show: getShow(id), entry, status: null }))
+      .map(([id, entry]) => ({ id, show: resolveShow(id), entry, status: null }))
       .filter((item) => item.show)
       .map((item) => ({ ...item, status: deriveShowStatus(item.show, item.entry) }))
       .filter((item) => filter === 'all' || item.status === filter)
-      .sort((a, b) => t(a.show.titleKey).localeCompare(t(b.show.titleKey)));
-  }, [filter, shows, t]);
+      .sort((a, b) => mediaTitle(t, a.show).localeCompare(mediaTitle(t, b.show)));
+  }, [filter, revision, shows, t]);
 
   return (
     <View style={styles.screen}>

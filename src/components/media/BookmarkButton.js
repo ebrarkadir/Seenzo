@@ -3,7 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { colors } from '../../theme';
 
-export default function FavoriteButton({ active, label, onPress, style }) {
+export default function BookmarkButton({ active, label, onPress, style }) {
   return (
     <Pressable
       accessibilityRole="button"
@@ -13,7 +13,7 @@ export default function FavoriteButton({ active, label, onPress, style }) {
       onPress={onPress}
       style={[styles.button, style]}
     >
-      <Ionicons name={active ? 'heart' : 'heart-outline'} size={18} color={active ? colors.favorite : colors.text} />
+      <Ionicons name={active ? 'bookmark' : 'bookmark-outline'} size={18} color={active ? colors.primary : colors.text} />
     </Pressable>
   );
 }

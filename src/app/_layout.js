@@ -1,18 +1,24 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { I18nextProvider, useTranslation } from 'react-i18next';
 
 import i18n from '../i18n';
+import { loadMediaLibrary } from '../data/mediaLibrary';
 import { colors } from '../theme';
 import { TrackingProvider, useTracking } from '../tracking/TrackingContext';
 
 function RootStack() {
   const { t } = useTranslation();
   const { ready, onboardingComplete } = useTracking();
+  const [catalogReady, setCatalogReady] = useState(false);
   const segments = useSegments();
   const router = useRouter();
+
+  useEffect(() => {
+    loadMediaLibrary().finally(() => setCatalogReady(true));
+  }, []);
 
   useEffect(() => {
     if (!ready || onboardingComplete) {
@@ -23,7 +29,7 @@ function RootStack() {
     }
   }, [onboardingComplete, ready, router, segments]);
 
-  if (!ready) {
+  if (!ready || !catalogReady) {
     return <View style={{ flex: 1, backgroundColor: colors.background }} />;
   }
 
@@ -44,7 +50,7 @@ function RootStack() {
       <Stack.Screen name="upcoming" options={{ title: t('upcoming.title') }} />
       <Stack.Screen name="archive/shows" options={{ title: t('archive.showsTitle') }} />
       <Stack.Screen name="archive/movies" options={{ title: t('archive.moviesTitle') }} />
-      <Stack.Screen name="favorites" options={{ title: t('favorites.title') }} />
+      <Stack.Screen name="trakt-test" options={{ title: t('trakt.title') }} />
       <Stack.Screen name="show/[id]" options={{ title: '' }} />
       <Stack.Screen name="movie/[id]" options={{ title: '' }} />
     </Stack>

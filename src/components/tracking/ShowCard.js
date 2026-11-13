@@ -1,11 +1,10 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
-import FavoriteButton from '../media/FavoriteButton';
 import PosterThumb from '../ui/PosterThumb';
 import PrimaryButton from '../ui/PrimaryButton';
 import StatusBadge from '../ui/StatusBadge';
-import { useTracking } from '../../tracking/TrackingContext';
+import { episodeTitle, mediaTitle } from '../../data/labels';
 import { colors, radii, spacing, typography } from '../../theme';
 import {
   deriveShowStatus,
@@ -29,9 +28,7 @@ export default function ShowCard({
   onSecondary,
 }) {
   const { t } = useTranslation();
-  const { favorites, toggleFavorite } = useTracking();
-  const favorite = Boolean(favorites?.shows?.[show.id]);
-  const title = t(show.titleKey);
+  const title = mediaTitle(t, show);
   const status = deriveShowStatus(show, entry);
   const next = getNextEpisode(show, entry);
   const progress = getProgress(show, entry);
@@ -40,7 +37,7 @@ export default function ShowCard({
 
   let meta = t(`tv.status.${status}`);
   if (status === 'watching' && next) {
-    meta = t('tv.next', { code: codeLabel(t, next), title: t(next.titleKey) });
+    meta = t('tv.next', { code: codeLabel(t, next), title: episodeTitle(t, next) });
   } else if (status === 'dropped' && last) {
     meta = t('tv.stoppedAt', { code: codeLabel(t, last) });
   } else if (status === 'plan') {
@@ -60,7 +57,7 @@ export default function ShowCard({
           onPress={onPress}
           style={styles.row}
         >
-          <PosterThumb uri={show.poster} status={status} />
+          <PosterThumb uri={show.poster} posterPath={show.posterPath} status={status} />
           <View style={styles.body}>
           <Text style={styles.title} numberOfLines={2}>
             {title}
@@ -76,12 +73,6 @@ export default function ShowCard({
           ) : null}
         </View>
         </Pressable>
-        <FavoriteButton
-          active={favorite}
-          label={t(favorite ? 'favorites.remove' : 'favorites.add', { title })}
-          onPress={() => toggleFavorite('show', show.id)}
-          style={styles.heart}
-        />
       </View>
       {primaryLabel || secondaryLabel ? (
         <View style={styles.actions}>
@@ -116,14 +107,6 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     gap: spacing.sm + 4,
-  },
-  heart: {
-    position: 'absolute',
-    top: 2,
-    left: 26,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
   },
   body: {
     flex: 1,

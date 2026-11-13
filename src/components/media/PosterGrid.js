@@ -11,6 +11,7 @@ export default function PosterGrid({
   ListFooterComponent,
   ListEmptyComponent,
   contentBottom = spacing.lg,
+  onEndReached,
 }) {
   const { width } = useWindowDimensions();
   const size = posterSize(width);
@@ -25,6 +26,8 @@ export default function PosterGrid({
       ListHeaderComponent={ListHeaderComponent}
       ListFooterComponent={ListFooterComponent}
       ListEmptyComponent={ListEmptyComponent}
+      onEndReached={onEndReached}
+      onEndReachedThreshold={0.4}
       renderItem={({ item }) => <View style={{ width: size.width }}>{renderItem(item, size)}</View>}
     />
   );

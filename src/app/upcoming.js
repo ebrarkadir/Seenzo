@@ -4,7 +4,7 @@ import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 
 import UpcomingRow from '../components/tracking/UpcomingRow';
-import { getShow } from '../data/catalog';
+import { resolveShow, useMediaRevision } from '../data/mediaLibrary';
 import { colors, radii, spacing, typography } from '../theme';
 import { useTracking } from '../tracking/TrackingContext';
 import { upcomingForShows } from '../tracking/status';
@@ -14,18 +14,22 @@ const FILTERS = ['all', 'episode', 'season'];
 export default function UpcomingScreen() {
   const { t } = useTranslation();
   const { shows } = useTracking();
+  const revision = useMediaRevision();
   const [filter, setFilter] = useState('all');
 
   const items = useMemo(() => {
+    if (revision < 0) {
+      return [];
+    }
     const tracked = Object.entries(shows)
-      .map(([id, entry]) => ({ show: getShow(id), entry }))
+      .map(([id, entry]) => ({ show: resolveShow(id), entry }))
       .filter((item) => item.show);
     const upcoming = upcomingForShows(tracked);
     if (filter === 'all') {
       return upcoming;
     }
     return upcoming.filter((item) => item.kind === filter);
-  }, [filter, shows]);
+  }, [filter, revision, shows]);
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>

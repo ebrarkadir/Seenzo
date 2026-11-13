@@ -109,6 +109,65 @@ movies.forEach((movie) => {
     expect(`key ${key}`, hasKey(key), true);
   });
 });
+const watchlist = loadModule('src/tracking/watchlist.js', [
+  'applyShowWatchlistToggle',
+  'applyMovieWatchlistToggle',
+  'migrateFavorites',
+  'isShowWatchlisted',
+  'isMovieWatchlisted',
+  'showBookmarkVisible',
+  'movieBookmarkVisible',
+].join(', '));
+
+const base = {
+  shows: {
+    'harbor-lights': { intent: 'watching', watchedEpisodeIds: ['harbor-lights-s1e1'], rating: 8 },
+  },
+  movies: {
+    'golden-hour': { saved: true, watched: true, rating: 9 },
+  },
+  showRatings: { 'paper-saints': 7 },
+  episodeRatings: { 'harbor-lights-s1e1': 9 },
+  favorites: {
+    shows: { 'harbor-lights': true, afterglow: true },
+    movies: { 'golden-hour': true, 'low-orbit': true },
+  },
+};
+const migrated = watchlist.migrateFavorites(base);
+expect('favorite show already watching stays watching', migrated.shows['harbor-lights'], base.shows['harbor-lights']);
+expect('favorite-only show becomes plan', migrated.shows.afterglow.intent, 'plan');
+expect('favorite-only show has no watched episodes', migrated.shows.afterglow.watchedEpisodeIds, []);
+expect('watched favorite movie stays watched', migrated.movies['golden-hour'], base.movies['golden-hour']);
+expect('favorite-only movie is to watch', migrated.movies['low-orbit'], { saved: true, watched: false, rating: null });
+const migratedAgain = watchlist.migrateFavorites({ ...base, ...migrated, favorites: undefined });
+expect('migration does not duplicate a planned show', migratedAgain.shows.afterglow, migrated.shows.afterglow);
+
+const addedShow = watchlist.applyShowWatchlistToggle({ shows: {}, showRatings: { wren: 6 }, movies: {} }, 'wren');
+expect('bookmark adds a show to plan', addedShow.shows.wren.intent, 'plan');
+expect('bookmark keeps a show rating', addedShow.shows.wren.rating, 6);
+const watchingUntouched = watchlist.applyShowWatchlistToggle(base, 'harbor-lights');
+expect('bookmark does not reset a watching show', watchingUntouched.shows['harbor-lights'], base.shows['harbor-lights']);
+const removedPlan = watchlist.applyShowWatchlistToggle(addedShow, 'wren');
+expect('bookmark removes a planned show', removedPlan.shows.wren, undefined);
+expect('removing a planned show keeps its rating', removedPlan.showRatings.wren, 6);
+
+const addedMovie = watchlist.applyMovieWatchlistToggle({ movies: { rated: { saved: false, watched: false, rating: 4 } } }, 'rated');
+expect('bookmark saves a movie to watch', watchlist.isMovieWatchlisted(addedMovie.movies.rated), true);
+expect('bookmark keeps a movie rating', addedMovie.movies.rated.rating, 4);
+const watchedUntouched = watchlist.applyMovieWatchlistToggle(base, 'golden-hour');
+expect('bookmark does not reset a watched movie', watchedUntouched.movies['golden-hour'], base.movies['golden-hour']);
+expect('watched movie hides the bookmark', watchlist.movieBookmarkVisible(base.movies['golden-hour']), false);
+expect('watching show hides the bookmark', watchlist.showBookmarkVisible(base.shows['harbor-lights']), false);
+expect('planned show shows a filled bookmark', watchlist.isShowWatchlisted(addedShow.shows.wren), true);
+const removedMovie = watchlist.applyMovieWatchlistToggle(addedMovie, 'rated');
+expect('bookmark removes a to-watch movie', removedMovie.movies.rated.saved, false);
+expect('removing a to-watch movie keeps its rating', removedMovie.movies.rated.rating, 4);
+
+expect('watchlist add label', hasKey('watchlist.add'), true);
+expect('watchlist remove label', hasKey('watchlist.remove'), true);
+expect('show watchlist action', hasKey('tv.addToWatchlist'), true);
+expect('movie watchlist action', hasKey('movies.removeFromWatchlist'), true);
+
 const failed = checks.filter((check) => !check.pass);
 if (failed.length) {
   console.error(JSON.stringify(failed, null, 2));

@@ -6,27 +6,79 @@ import { useTranslation } from 'react-i18next';
 import PosterThumb from '../../components/ui/PosterThumb';
 import PrimaryButton from '../../components/ui/PrimaryButton';
 import RatingSheet from '../../components/ui/RatingSheet';
-import { getMovie } from '../../data/catalog';
+import { mediaSynopsis, mediaTitle } from '../../data/labels';
+import { rememberMovie, resolveMovie, useMediaRevision } from '../../data/mediaLibrary';
+import { hydrateMovie } from '../../services/trakt/catalog';
+import { parseTraktMovieKey } from '../../services/trakt/normalize';
 import { colors, radii, spacing, typography } from '../../theme';
 import { useTracking } from '../../tracking/TrackingContext';
 
 export default function MovieDetailScreen() {
   const { id } = useLocalSearchParams();
   const movieId = Array.isArray(id) ? id[0] : id;
-  const movie = getMovie(movieId);
+  const revision = useMediaRevision();
+  const movie = resolveMovie(movieId);
+  const traktId = parseTraktMovieKey(movieId);
+  const [remoteLoading, setRemoteLoading] = useState(Boolean(traktId) && !movie);
+  const [remoteError, setRemoteError] = useState(null);
   const { t } = useTranslation();
   const navigation = useNavigation();
-  const { movies, saveMovie, removeMovie, setMovieRating } = useTracking();
+  const { movies, saveMovie, toggleMovieWatchlist, setMovieRating } = useTracking();
   const entry = movies[movieId];
   const movieRating = entry?.rating ?? null;
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(null);
 
   useEffect(() => {
-    navigation.setOptions({ title: movie ? t(movie.titleKey) : t('movies.notFound') });
-  }, [movie, navigation, t]);
+    navigation.setOptions({ title: movie ? mediaTitle(t, movie) : t('movies.notFound') });
+  }, [movie, navigation, revision, t]);
+
+  useEffect(() => {
+    if (!traktId || resolveMovie(movieId)) {
+      return undefined;
+    }
+    let active = true;
+    hydrateMovie(traktId)
+      .then((record) => {
+        if (!active) {
+          return;
+        }
+        if (record) {
+          rememberMovie(record);
+        } else {
+          setRemoteError({ code: 'invalid' });
+        }
+      })
+      .catch((requestError) => {
+        if (active) {
+          setRemoteError(requestError);
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setRemoteLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [movieId, traktId]);
 
   if (!movie) {
+    if (remoteLoading) {
+      return (
+        <View style={styles.missing}>
+          <Text style={styles.body}>{t('trakt.loading')}</Text>
+        </View>
+      );
+    }
+    if (remoteError) {
+      return (
+        <View style={styles.missing}>
+          <Text style={styles.body}>{t(`trakt.errors.${remoteError.code || 'unknown'}`, { status: remoteError.status ?? '' })}</Text>
+        </View>
+      );
+    }
     return (
       <View style={styles.missing}>
         <Text style={styles.body}>{t('movies.notFound')}</Text>
@@ -40,14 +92,22 @@ export default function MovieDetailScreen() {
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       <View style={styles.header}>
-        <PosterThumb uri={movie.poster} width={96} height={144} status={watched ? 'completed' : saved ? 'plan' : null} />
+        <PosterThumb uri={movie.poster} posterPath={movie.posterPath} width={96} height={144} status={watched ? 'completed' : saved ? 'plan' : null} />
         <View style={styles.headerCopy}>
-          <Text style={styles.title}>{t(movie.titleKey)}</Text>
-          <Text style={styles.meta}>{movie.year} · {t(movie.genreKey)}</Text>
+          <Text style={styles.title}>{mediaTitle(t, movie)}</Text>
+          <Text style={styles.meta}>
+            {movie.genreKey
+              ? `${movie.year} · ${t(movie.genreKey)}`
+              : [movie.year, movie.genres?.join(', ')].filter(Boolean).join(' · ') || t('trakt.unavailable')}
+          </Text>
+          {movie.runtime ? <Text style={styles.meta}>{t('common.minutes', { count: movie.runtime })}</Text> : null}
+          {movie.communityRating == null ? null : (
+            <Text style={styles.meta}>{t('trakt.communityRating', { rating: movie.communityRating })}</Text>
+          )}
           <Text style={styles.meta}>{watched ? t('movies.watched') : saved ? t('movies.toWatch') : t('movies.notSaved')}</Text>
         </View>
       </View>
-      <Text style={styles.body}>{t(movie.synopsisKey)}</Text>
+      <Text style={styles.body}>{mediaSynopsis(t, movie) || t('trakt.unavailable')}</Text>
       <Pressable
         accessibilityRole="button"
         onPress={() => {
@@ -74,13 +134,13 @@ export default function MovieDetailScreen() {
           />
         )}
         {saved && !watched ? (
-          <PrimaryButton label={t('movies.removeFromList')} variant="secondary" onPress={() => removeMovie(movie.id)} />
+          <PrimaryButton label={t('movies.removeFromWatchlist')} variant="secondary" onPress={() => toggleMovieWatchlist(movie.id)} />
         ) : null}
-        {!saved ? (
+        {!saved && !watched ? (
           <PrimaryButton
-            label={t('discover.addMovie')}
+            label={t('movies.addToWatchlist')}
             variant="secondary"
-            onPress={() => saveMovie(movie.id, { saved: true, watched: false })}
+            onPress={() => toggleMovieWatchlist(movie.id)}
           />
         ) : null}
       </View>

@@ -2,8 +2,9 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { demoTracking } from '../data/demoTracking';
-import { getMovie, getShow } from '../data/catalog';
+import { resolveMovie as getMovie, resolveShow as getShow } from '../data/mediaLibrary';
 import { getNextEpisode, isReleased, watchedThroughIds } from './status';
+import { applyMovieWatchlistToggle, applyShowWatchlistToggle, migrateFavorites, removeTrackedShow } from './watchlist';
 
 const STORAGE_KEY = 'seenzo.tracking.v1';
 
@@ -15,7 +16,6 @@ function emptyState() {
     demoMode: false,
     shows: {},
     movies: {},
-    favorites: { shows: {}, movies: {} },
     showRatings: {},
     episodeRatings: {},
   };
@@ -60,16 +60,16 @@ function normalize(raw) {
   if (!raw || typeof raw !== 'object') {
     return emptyState();
   }
-  const favorites = raw.favorites && typeof raw.favorites === 'object' ? raw.favorites : {};
+  const migrated = migrateFavorites({
+    shows: raw.shows && typeof raw.shows === 'object' ? raw.shows : {},
+    movies: raw.movies && typeof raw.movies === 'object' ? raw.movies : {},
+    favorites: raw.favorites,
+  });
   return {
     onboardingComplete: Boolean(raw.onboardingComplete),
     demoMode: Boolean(raw.demoMode),
-    shows: raw.shows && typeof raw.shows === 'object' ? raw.shows : {},
-    movies: raw.movies && typeof raw.movies === 'object' ? raw.movies : {},
-    favorites: {
-      shows: idMap(favorites.shows),
-      movies: idMap(favorites.movies),
-    },
+    shows: migrated.shows,
+    movies: migrated.movies,
     showRatings: ratingMap(raw.showRatings),
     episodeRatings: ratingMap(raw.episodeRatings),
   };
@@ -190,6 +190,7 @@ export function TrackingProvider({ children }) {
       updateUndo({
         showId,
         episodeId: marked.id,
+        episodeTitle: marked.title || '',
         episodeTitleKey: marked.titleKey,
       });
     }
@@ -227,6 +228,7 @@ export function TrackingProvider({ children }) {
       updateUndo({
         showId,
         episodeId: marked.id,
+        episodeTitle: marked.title || '',
         episodeTitleKey: marked.titleKey,
       });
     } else {
@@ -258,15 +260,23 @@ export function TrackingProvider({ children }) {
 
   const removeShow = useCallback((showId) => {
     updateUndo(null);
-    setState((prev) => {
-      if (!prev.shows[showId]) {
-        return prev;
-      }
-      const shows = { ...prev.shows };
-      delete shows[showId];
-      return { ...prev, shows };
-    });
+    setState((prev) => removeTrackedShow(prev, showId));
   }, [updateUndo]);
+
+  const toggleShowWatchlist = useCallback((showId) => {
+    if (!getShow(showId)) {
+      return;
+    }
+    updateUndo(null);
+    setState((prev) => applyShowWatchlistToggle(prev, showId));
+  }, [updateUndo]);
+
+  const toggleMovieWatchlist = useCallback((movieId) => {
+    if (!getMovie(movieId)) {
+      return;
+    }
+    setState((prev) => applyMovieWatchlistToggle(prev, movieId));
+  }, []);
 
   const setShowRating = useCallback((showId, rating) => {
     if (!getShow(showId)) {
@@ -310,30 +320,6 @@ export function TrackingProvider({ children }) {
         episodeRatings[episodeId] = value;
       }
       return { ...prev, episodeRatings };
-    });
-  }, []);
-
-  const toggleFavorite = useCallback((kind, id) => {
-    const bucket = kind === 'movie' ? 'movies' : 'shows';
-    const known = bucket === 'movies' ? getMovie(id) : getShow(id);
-    if (!known) {
-      return;
-    }
-    setState((prev) => {
-      const current = { ...(prev.favorites?.[bucket] || {}) };
-      if (current[id]) {
-        delete current[id];
-      } else {
-        current[id] = true;
-      }
-      return {
-        ...prev,
-        favorites: {
-          shows: prev.favorites?.shows || {},
-          movies: prev.favorites?.movies || {},
-          [bucket]: current,
-        },
-      };
     });
   }, []);
 
@@ -451,7 +437,6 @@ export function TrackingProvider({ children }) {
       demoMode: true,
       shows: demoTracking.shows,
       movies: demoTracking.movies,
-      favorites: demoTracking.favorites || { shows: {}, movies: {} },
       showRatings: {},
       episodeRatings: demoTracking.episodeRatings || {},
     });
@@ -464,7 +449,6 @@ export function TrackingProvider({ children }) {
       demoMode: false,
       shows: {},
       movies: {},
-      favorites: { shows: {}, movies: {} },
       showRatings: {},
       episodeRatings: {},
     });
@@ -481,7 +465,6 @@ export function TrackingProvider({ children }) {
     demoMode: state.demoMode,
     shows: state.shows,
     movies: state.movies,
-    favorites: state.favorites,
     showRatings: state.showRatings,
     episodeRatings: state.episodeRatings,
     undo,
@@ -493,7 +476,8 @@ export function TrackingProvider({ children }) {
     removeShow,
     setShowRating,
     setEpisodeRating,
-    toggleFavorite,
+    toggleShowWatchlist,
+    toggleMovieWatchlist,
     saveMovie,
     removeMovie,
     setMovieRating,
@@ -513,7 +497,8 @@ export function TrackingProvider({ children }) {
     removeShow,
     setShowRating,
     setEpisodeRating,
-    toggleFavorite,
+    toggleShowWatchlist,
+    toggleMovieWatchlist,
     saveMovie,
     removeMovie,
     setMovieRating,

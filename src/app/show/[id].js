@@ -10,7 +10,10 @@ import PrimaryButton from '../../components/ui/PrimaryButton';
 import RatingSheet from '../../components/ui/RatingSheet';
 import StatusBadge from '../../components/ui/StatusBadge';
 import UndoBar from '../../components/tracking/UndoBar';
-import { getShow } from '../../data/catalog';
+import { episodeTitle, mediaSynopsis, mediaTitle } from '../../data/labels';
+import { rememberShow, resolveShow, useMediaRevision } from '../../data/mediaLibrary';
+import { hydrateShow } from '../../services/trakt/catalog';
+import { parseTraktShowKey } from '../../services/trakt/normalize';
 import { colors, radii, spacing, typography } from '../../theme';
 import { useTracking } from '../../tracking/TrackingContext';
 import {
@@ -23,7 +26,11 @@ import {
 export default function ShowDetailScreen() {
   const { id } = useLocalSearchParams();
   const showId = Array.isArray(id) ? id[0] : id;
-  const show = getShow(showId);
+  const revision = useMediaRevision();
+  const show = resolveShow(showId);
+  const traktId = parseTraktShowKey(showId);
+  const [remoteLoading, setRemoteLoading] = useState(Boolean(traktId) && !show?.hydrated);
+  const [remoteError, setRemoteError] = useState(null);
   const { t } = useTranslation();
   const navigation = useNavigation();
   const {
@@ -32,6 +39,7 @@ export default function ShowDetailScreen() {
     toggleEpisode,
     setShowIntent,
     removeShow,
+    toggleShowWatchlist,
     setShowRating,
     setEpisodeRating,
     showRatings,
@@ -45,10 +53,55 @@ export default function ShowDetailScreen() {
   const [draft, setDraft] = useState(null);
 
   useEffect(() => {
-    navigation.setOptions({ title: show ? t(show.titleKey) : t('tv.notFound') });
-  }, [navigation, show, t]);
+    navigation.setOptions({ title: show ? mediaTitle(t, show) : t('tv.notFound') });
+  }, [navigation, revision, show, t]);
+
+  useEffect(() => {
+    if (!traktId || resolveShow(showId)?.hydrated) {
+      return undefined;
+    }
+    let active = true;
+    hydrateShow(traktId)
+      .then((record) => {
+        if (!active) {
+          return;
+        }
+        if (record) {
+          rememberShow(record);
+        } else {
+          setRemoteError({ code: 'invalid' });
+        }
+      })
+      .catch((requestError) => {
+        if (active) {
+          setRemoteError(requestError);
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setRemoteLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [showId, traktId]);
 
   if (!show) {
+    if (remoteLoading) {
+      return (
+        <View style={styles.missing}>
+          <Text style={styles.body}>{t('trakt.loading')}</Text>
+        </View>
+      );
+    }
+    if (remoteError) {
+      return (
+        <View style={styles.missing}>
+          <Text style={styles.body}>{t(`trakt.errors.${remoteError.code || 'unknown'}`, { status: remoteError.status ?? '' })}</Text>
+        </View>
+      );
+    }
     return (
       <View style={styles.missing}>
         <Text style={styles.body}>{t('tv.notFound')}</Text>
@@ -58,17 +111,27 @@ export default function ShowDetailScreen() {
 
   const status = entry ? deriveShowStatus(show, entry) : null;
   const progress = getProgress(show, entry);
-  const seasonBlock = show.seasons.find((item) => item.season === season) || show.seasons[0];
+  const seasons = show.seasons || [];
+  const seasonBlock = seasons.find((item) => item.season === season) || seasons[0];
   const watched = new Set(entry?.watchedEpisodeIds || []);
 
   return (
     <View style={styles.screen}>
       <ScrollView contentContainerStyle={{ padding: spacing.md, paddingBottom: undo ? 120 : spacing.xl, gap: spacing.md }}>
         <View style={styles.header}>
-          <PosterThumb uri={show.poster} width={96} height={144} status={status} />
+          <PosterThumb uri={show.poster} posterPath={show.posterPath} width={96} height={144} status={status} />
           <View style={styles.headerCopy}>
-            <Text style={styles.title}>{t(show.titleKey)}</Text>
-            <Text style={styles.meta}>{t(`tv.release.${show.releaseStatus}`)}</Text>
+            <Text style={styles.title}>{mediaTitle(t, show)}</Text>
+            <Text style={styles.meta}>{show.year || t('trakt.unavailable')}</Text>
+            <Text style={styles.meta}>
+              {show.releaseStatus ? t(`tv.release.${show.releaseStatus}`) : t('trakt.unavailable')}
+            </Text>
+            <Text style={styles.meta}>
+              {show.communityRating == null
+                ? t('trakt.unavailable')
+                : t('trakt.communityRating', { rating: show.communityRating })}
+            </Text>
+            <Text style={styles.meta}>{show.genres?.length ? show.genres.join(', ') : t('trakt.unavailable')}</Text>
             {status ? <StatusBadge status={status} /> : <Text style={styles.meta}>{t('tv.notTracking')}</Text>}
             <Text style={styles.meta}>
               {progress.total
@@ -77,7 +140,8 @@ export default function ShowDetailScreen() {
             </Text>
           </View>
         </View>
-        <Text style={styles.body}>{t(show.synopsisKey)}</Text>
+        <Text style={styles.body}>{mediaSynopsis(t, show) || t('trakt.unavailable')}</Text>
+        {remoteLoading ? <Text style={styles.meta}>{t('trakt.loading')}</Text> : null}
         <Pressable
           accessibilityRole="button"
           onPress={() => {
@@ -92,14 +156,16 @@ export default function ShowDetailScreen() {
           </Text>
         </Pressable>
         <View style={styles.actions}>
+          {!entry || entry.intent === 'plan' ? (
+            <PrimaryButton
+              label={t(entry?.intent === 'plan' ? 'tv.removeFromWatchlist' : 'tv.addToWatchlist')}
+              variant={entry?.intent === 'plan' ? 'secondary' : 'primary'}
+              onPress={() => toggleShowWatchlist(show.id)}
+              style={styles.action}
+            />
+          ) : null}
           <PrimaryButton
-            label={t('tv.status.plan')}
-            variant={entry?.intent === 'plan' ? 'primary' : 'secondary'}
-            onPress={() => setShowIntent(show.id, 'plan')}
-            style={styles.action}
-          />
-          <PrimaryButton
-            label={t('tv.status.watching')}
+            label={entry?.intent === 'dropped' ? t('tv.resume') : t('tv.startWatching')}
             variant={entry?.intent === 'watching' ? 'primary' : 'secondary'}
             onPress={() => setShowIntent(show.id, 'watching')}
             style={styles.action}
@@ -111,11 +177,11 @@ export default function ShowDetailScreen() {
             style={styles.action}
           />
         </View>
-        {entry ? (
+        {entry && entry.intent !== 'plan' ? (
           <PrimaryButton label={t('tv.removeShow')} variant="secondary" onPress={() => removeShow(show.id)} />
         ) : null}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.seasons}>
-          {show.seasons.map((item) => {
+          {seasons.map((item) => {
             const selected = item.season === seasonBlock.season;
             return (
               <Pressable
@@ -132,7 +198,7 @@ export default function ShowDetailScreen() {
             );
           })}
         </ScrollView>
-        {seasonBlock.episodes.map((episode) => {
+        {(seasonBlock?.episodes || []).map((episode) => {
           const released = isReleased(episode);
           const isWatched = watched.has(episode.id);
           const code = t('common.episodeCode', episodeCode(episode));
@@ -153,12 +219,14 @@ export default function ShowDetailScreen() {
                 />
                 <View style={styles.episodeCopy}>
                   <Text style={styles.episodeTitle}>
-                    {code} · {t(episode.titleKey)}
+                    {code} · {episodeTitle(t, episode) || t('trakt.unavailable')}
                   </Text>
                   <Text style={styles.meta}>
                     {released
                       ? t('common.minutes', { count: episode.runtime })
-                      : t('tv.upcoming', { date: formatAirDate(episode.airDate) })}
+                      : episode.airDate
+                      ? t('tv.upcoming', { date: formatAirDate(episode.airDate) })
+                      : t('upcoming.tba')}
                   </Text>
                 </View>
               </Pressable>
@@ -168,7 +236,7 @@ export default function ShowDetailScreen() {
                   accessibilityLabel={t('rating.episode')}
                   onPress={() => {
                     setDraft(episodeRating);
-                    setSheet({ type: 'episode', id: episode.id, title: `${code} · ${t(episode.titleKey)}` });
+                    setSheet({ type: 'episode', id: episode.id, title: `${code} · ${episodeTitle(t, episode)}` });
                   }}
                   style={styles.rateChip}
                 >

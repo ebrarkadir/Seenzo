@@ -2,6 +2,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import PosterThumb from '../ui/PosterThumb';
+import { mediaTitle } from '../../data/labels';
 import { colors, radii, spacing, typography } from '../../theme';
 import { episodeCode } from '../../tracking/status';
 
@@ -21,10 +22,10 @@ export default function UpcomingRow({ item, onPress }) {
 
   return (
     <Pressable accessibilityRole="button" onPress={onPress} style={styles.row}>
-      <PosterThumb uri={item.show.poster} width={52} height={78} />
+      <PosterThumb uri={item.show.poster} posterPath={item.show.posterPath} width={52} height={78} />
       <View style={styles.copy}>
         <Text style={styles.title} numberOfLines={1}>
-          {t(item.show.titleKey)}
+          {mediaTitle(t, item.show)}
         </Text>
         <Text style={styles.meta} numberOfLines={1}>
           {kind} · {code}

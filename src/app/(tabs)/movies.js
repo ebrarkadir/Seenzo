@@ -8,21 +8,26 @@ import { MoviePoster } from '../../components/media/LibraryTiles';
 import WatchedMoviesGrid from '../../components/media/WatchedMoviesGrid';
 import EmptyState from '../../components/ui/EmptyState';
 import SegmentedControl from '../../components/ui/SegmentedControl';
-import { getMovie } from '../../data/catalog';
+import { mediaTitle } from '../../data/labels';
+import { resolveMovie, useMediaRevision } from '../../data/mediaLibrary';
 import { colors, spacing } from '../../theme';
 import { useTracking } from '../../tracking/TrackingContext';
 
 export default function MoviesScreen() {
   const { t } = useTranslation();
   const { movies, saveMovie } = useTracking();
+  const revision = useMediaRevision();
   const [segment, setSegment] = useState('toWatch');
 
   const toWatch = useMemo(() => {
+    if (revision < 0) {
+      return [];
+    }
     return Object.entries(movies)
-      .map(([id, entry]) => ({ id, movie: getMovie(id), entry }))
+      .map(([id, entry]) => ({ id, movie: resolveMovie(id), entry }))
       .filter((item) => item.movie && item.entry.saved && !item.entry.watched)
-      .sort((a, b) => t(a.movie.titleKey).localeCompare(t(b.movie.titleKey)));
-  }, [movies, t]);
+      .sort((a, b) => mediaTitle(t, a.movie).localeCompare(mediaTitle(t, b.movie)));
+  }, [movies, revision, t]);
 
   const header = (
     <SegmentedControl

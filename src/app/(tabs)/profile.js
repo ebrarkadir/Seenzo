@@ -10,7 +10,7 @@ import { useTracking } from '../../tracking/TrackingContext';
 
 export default function ProfileScreen() {
   const { t } = useTranslation();
-  const { shows, movies, favorites, demoMode, loadDemo, clearLocalData, restartOnboarding } = useTracking();
+  const { shows, movies, demoMode, loadDemo, clearLocalData, restartOnboarding } = useTracking();
 
   const stats = useMemo(() => {
     const showCount = Object.keys(shows).length;
@@ -19,9 +19,8 @@ export default function ProfileScreen() {
       (sum, entry) => sum + (entry.watchedEpisodeIds || []).length,
       0
     );
-    const favoriteCount = Object.keys(favorites?.shows || {}).length + Object.keys(favorites?.movies || {}).length;
-    return { showCount, movieCount, episodeCount, favoriteCount };
-  }, [favorites, movies, shows]);
+    return { showCount, movieCount, episodeCount };
+  }, [movies, shows]);
 
   const confirm = (title, message, onConfirm) => {
     Alert.alert(title, message, [
@@ -54,14 +53,11 @@ export default function ProfileScreen() {
         <Text style={styles.linkTitle}>{t('profile.watchedMovies')}</Text>
         <Text style={styles.linkMeta}>{t('profile.watchedMoviesMeta', { count: stats.movieCount })}</Text>
       </Pressable>
-      <Pressable accessibilityRole="button" style={styles.link} onPress={() => router.push('/favorites')}>
-        <Text style={styles.linkTitle}>{t('profile.favorites')}</Text>
-        <Text style={styles.linkMeta}>{t('profile.favoritesMeta', { count: stats.favoriteCount })}</Text>
-      </Pressable>
       <View style={styles.panel}>
         <Text style={styles.kicker}>{t('profile.demoKicker')}</Text>
         <Text style={styles.panelTitle}>{t('profile.demoTitle')}</Text>
         <Text style={styles.panelBody}>{t('profile.demoNote')}</Text>
+        <Text style={styles.panelBody}>{t('profile.traktAttribution')}</Text>
         <Text style={styles.mode}>{demoMode ? t('profile.demoOn') : t('profile.demoOff')}</Text>
         <PrimaryButton
           label={t('profile.loadDemo')}
@@ -82,6 +78,11 @@ export default function ProfileScreen() {
             restartOnboarding();
             router.replace('/onboarding');
           })}
+        />
+        <PrimaryButton
+          label={t('profile.traktTest')}
+          variant="secondary"
+          onPress={() => router.push('/trakt-test')}
         />
       </View>
     </ScrollView>
