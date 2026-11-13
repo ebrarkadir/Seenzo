@@ -15,6 +15,9 @@ function emptyState() {
     demoMode: false,
     shows: {},
     movies: {},
+    favorites: { shows: {}, movies: {} },
+    showRatings: {},
+    episodeRatings: {},
   };
 }
 
@@ -35,15 +38,40 @@ function movieEntry(partial) {
   };
 }
 
+function idMap(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+  return value;
+}
+
+function ratingMap(value) {
+  const next = {};
+  Object.entries(idMap(value)).forEach(([key, rating]) => {
+    const clamped = clampRating(rating);
+    if (clamped != null) {
+      next[key] = clamped;
+    }
+  });
+  return next;
+}
+
 function normalize(raw) {
   if (!raw || typeof raw !== 'object') {
     return emptyState();
   }
+  const favorites = raw.favorites && typeof raw.favorites === 'object' ? raw.favorites : {};
   return {
     onboardingComplete: Boolean(raw.onboardingComplete),
     demoMode: Boolean(raw.demoMode),
     shows: raw.shows && typeof raw.shows === 'object' ? raw.shows : {},
     movies: raw.movies && typeof raw.movies === 'object' ? raw.movies : {},
+    favorites: {
+      shows: idMap(favorites.shows),
+      movies: idMap(favorites.movies),
+    },
+    showRatings: ratingMap(raw.showRatings),
+    episodeRatings: ratingMap(raw.episodeRatings),
   };
 }
 
@@ -212,12 +240,17 @@ export function TrackingProvider({ children }) {
     }
     updateUndo(null);
     setState((prev) => {
-      const entry = prev.shows[showId] || showEntry({});
+      const existing = prev.shows[showId];
+      const carried = existing?.rating ?? prev.showRatings?.[showId] ?? null;
+      const entry = existing || showEntry({ rating: carried });
+      const showRatings = { ...(prev.showRatings || {}) };
+      delete showRatings[showId];
       return {
         ...prev,
+        showRatings,
         shows: {
           ...prev.shows,
-          [showId]: { ...entry, intent },
+          [showId]: { ...entry, intent, rating: entry.rating ?? carried },
         },
       };
     });
@@ -240,15 +273,65 @@ export function TrackingProvider({ children }) {
       return;
     }
     setState((prev) => {
+      const value = clampRating(rating);
       const entry = prev.shows[showId];
-      if (!entry) {
-        return prev;
+      if (entry) {
+        const showRatings = { ...(prev.showRatings || {}) };
+        delete showRatings[showId];
+        return {
+          ...prev,
+          showRatings,
+          shows: {
+            ...prev.shows,
+            [showId]: { ...entry, rating: value },
+          },
+        };
+      }
+      const showRatings = { ...(prev.showRatings || {}) };
+      if (value == null) {
+        delete showRatings[showId];
+      } else {
+        showRatings[showId] = value;
+      }
+      return { ...prev, showRatings };
+    });
+  }, []);
+
+  const setEpisodeRating = useCallback((episodeId, rating) => {
+    if (!episodeId) {
+      return;
+    }
+    setState((prev) => {
+      const episodeRatings = { ...(prev.episodeRatings || {}) };
+      const value = clampRating(rating);
+      if (value == null) {
+        delete episodeRatings[episodeId];
+      } else {
+        episodeRatings[episodeId] = value;
+      }
+      return { ...prev, episodeRatings };
+    });
+  }, []);
+
+  const toggleFavorite = useCallback((kind, id) => {
+    const bucket = kind === 'movie' ? 'movies' : 'shows';
+    const known = bucket === 'movies' ? getMovie(id) : getShow(id);
+    if (!known) {
+      return;
+    }
+    setState((prev) => {
+      const current = { ...(prev.favorites?.[bucket] || {}) };
+      if (current[id]) {
+        delete current[id];
+      } else {
+        current[id] = true;
       }
       return {
         ...prev,
-        shows: {
-          ...prev.shows,
-          [showId]: { ...entry, rating: clampRating(rating) },
+        favorites: {
+          shows: prev.favorites?.shows || {},
+          movies: prev.favorites?.movies || {},
+          [bucket]: current,
         },
       };
     });
@@ -282,26 +365,54 @@ export function TrackingProvider({ children }) {
   }, []);
 
   const setMovieRating = useCallback((movieId, rating) => {
-    saveMovie(movieId, { rating: clampRating(rating), saved: true });
-  }, [saveMovie]);
+    if (!getMovie(movieId)) {
+      return;
+    }
+    setState((prev) => {
+      const current = prev.movies[movieId];
+      const value = clampRating(rating);
+      if (!current && value == null) {
+        return prev;
+      }
+      if (current && value == null && !current.saved && !current.watched) {
+        const movies = { ...prev.movies };
+        delete movies[movieId];
+        return { ...prev, movies };
+      }
+      return {
+        ...prev,
+        movies: {
+          ...prev.movies,
+          [movieId]: movieEntry({
+            saved: current?.saved ?? false,
+            watched: current?.watched ?? false,
+            rating: value,
+          }),
+        },
+      };
+    });
+  }, []);
 
   const completeOnboarding = useCallback(({ shows: selectedShows = [], movies: selectedMovies = [] }) => {
     updateUndo(null);
     setState((prev) => {
       const shows = { ...prev.shows };
+      const showRatings = { ...(prev.showRatings || {}) };
       selectedShows.forEach((selection) => {
         const show = getShow(selection.id);
         if (!show) {
           return;
         }
+        const keptRating = prev.shows[selection.id]?.rating ?? showRatings[selection.id] ?? null;
+        delete showRatings[selection.id];
         if (!selection.throughEpisodeId) {
-          shows[selection.id] = showEntry({ intent: 'plan' });
+          shows[selection.id] = showEntry({ intent: 'plan', rating: keptRating });
           return;
         }
         shows[selection.id] = showEntry({
           intent: 'watching',
           watchedEpisodeIds: watchedThroughIds(show, selection.throughEpisodeId),
-          rating: prev.shows[selection.id]?.rating ?? null,
+          rating: keptRating,
         });
       });
 
@@ -328,6 +439,7 @@ export function TrackingProvider({ children }) {
         demoMode: false,
         shows,
         movies,
+        showRatings,
       };
     });
   }, [updateUndo]);
@@ -339,6 +451,9 @@ export function TrackingProvider({ children }) {
       demoMode: true,
       shows: demoTracking.shows,
       movies: demoTracking.movies,
+      favorites: demoTracking.favorites || { shows: {}, movies: {} },
+      showRatings: {},
+      episodeRatings: demoTracking.episodeRatings || {},
     });
   }, [updateUndo]);
 
@@ -349,6 +464,9 @@ export function TrackingProvider({ children }) {
       demoMode: false,
       shows: {},
       movies: {},
+      favorites: { shows: {}, movies: {} },
+      showRatings: {},
+      episodeRatings: {},
     });
   }, [updateUndo]);
 
@@ -363,6 +481,9 @@ export function TrackingProvider({ children }) {
     demoMode: state.demoMode,
     shows: state.shows,
     movies: state.movies,
+    favorites: state.favorites,
+    showRatings: state.showRatings,
+    episodeRatings: state.episodeRatings,
     undo,
     dismissUndo,
     undoLast,
@@ -371,6 +492,8 @@ export function TrackingProvider({ children }) {
     setShowIntent,
     removeShow,
     setShowRating,
+    setEpisodeRating,
+    toggleFavorite,
     saveMovie,
     removeMovie,
     setMovieRating,
@@ -389,6 +512,8 @@ export function TrackingProvider({ children }) {
     setShowIntent,
     removeShow,
     setShowRating,
+    setEpisodeRating,
+    toggleFavorite,
     saveMovie,
     removeMovie,
     setMovieRating,

@@ -4,21 +4,28 @@ import { useTranslation } from 'react-i18next';
 
 import { colors, radii, spacing } from '../../theme';
 import { deriveShowStatus } from '../../tracking/status';
+import { useTracking } from '../../tracking/TrackingContext';
 import PosterTile from './PosterTile';
 
 export function ShowPoster({ show, entry, width, height, onPress, onStart, onRemove }) {
   const { t } = useTranslation();
+  const { favorites, toggleFavorite } = useTracking();
   const status = entry ? deriveShowStatus(show, entry) : null;
+  const favorite = Boolean(favorites?.shows?.[show.id]);
+  const title = t(show.titleKey);
 
   return (
     <View style={{ width }}>
       <PosterTile
         uri={show.poster}
-        title={t(show.titleKey)}
+        title={title}
         meta={status ? t(`tv.status.${status}`) : null}
         width={width}
         height={height}
         status={status}
+        favorite={favorite}
+        favoriteLabel={t(favorite ? 'favorites.remove' : 'favorites.add', { title })}
+        onFavorite={() => toggleFavorite('show', show.id)}
         onPress={onPress}
         accessibilityLabel={t('tv.openShow', {
           title: t(show.titleKey),
@@ -39,19 +46,28 @@ export function ShowPoster({ show, entry, width, height, onPress, onStart, onRem
 
 export function MoviePoster({ movie, watched, rating, width, height, onPress, onMarkWatched, tracked }) {
   const { t } = useTranslation();
-  const meta = watched
-    ? rating
-      ? t('common.ratingValue', { rating })
-      : t('movies.watched')
-    : String(movie.year);
+  const { favorites, toggleFavorite } = useTracking();
+  const favorite = Boolean(favorites?.movies?.[movie.id]);
+  const title = t(movie.titleKey);
+  let meta = String(movie.year);
+  if (watched && rating) {
+    meta = t('common.ratingValue', { rating });
+  } else if (watched) {
+    meta = t('movies.watched');
+  } else if (rating) {
+    meta = `${movie.year} · ${t('common.ratingValue', { rating })}`;
+  }
 
   return (
     <PosterTile
       uri={movie.poster}
-      title={t(movie.titleKey)}
+      title={title}
       meta={meta}
       width={width}
       height={height}
+      favorite={favorite}
+      favoriteLabel={t(favorite ? 'favorites.remove' : 'favorites.add', { title })}
+      onFavorite={() => toggleFavorite('movie', movie.id)}
       badge={tracked && !watched ? t('discover.inLibrary') : null}
       onPress={onPress}
       accessibilityLabel={t('movies.openMovie', { title: t(movie.titleKey) })}

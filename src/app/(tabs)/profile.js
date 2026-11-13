@@ -10,7 +10,7 @@ import { useTracking } from '../../tracking/TrackingContext';
 
 export default function ProfileScreen() {
   const { t } = useTranslation();
-  const { shows, movies, demoMode, loadDemo, clearLocalData, restartOnboarding } = useTracking();
+  const { shows, movies, favorites, demoMode, loadDemo, clearLocalData, restartOnboarding } = useTracking();
 
   const stats = useMemo(() => {
     const showCount = Object.keys(shows).length;
@@ -19,8 +19,9 @@ export default function ProfileScreen() {
       (sum, entry) => sum + (entry.watchedEpisodeIds || []).length,
       0
     );
-    return { showCount, movieCount, episodeCount };
-  }, [movies, shows]);
+    const favoriteCount = Object.keys(favorites?.shows || {}).length + Object.keys(favorites?.movies || {}).length;
+    return { showCount, movieCount, episodeCount, favoriteCount };
+  }, [favorites, movies, shows]);
 
   const confirm = (title, message, onConfirm) => {
     Alert.alert(title, message, [
@@ -52,6 +53,10 @@ export default function ProfileScreen() {
       <Pressable accessibilityRole="button" style={styles.link} onPress={() => router.push('/archive/movies')}>
         <Text style={styles.linkTitle}>{t('profile.watchedMovies')}</Text>
         <Text style={styles.linkMeta}>{t('profile.watchedMoviesMeta', { count: stats.movieCount })}</Text>
+      </Pressable>
+      <Pressable accessibilityRole="button" style={styles.link} onPress={() => router.push('/favorites')}>
+        <Text style={styles.linkTitle}>{t('profile.favorites')}</Text>
+        <Text style={styles.linkMeta}>{t('profile.favoritesMeta', { count: stats.favoriteCount })}</Text>
       </Pressable>
       <View style={styles.panel}>
         <Text style={styles.kicker}>{t('profile.demoKicker')}</Text>

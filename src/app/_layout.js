@@ -44,6 +44,7 @@ function RootStack() {
       <Stack.Screen name="upcoming" options={{ title: t('upcoming.title') }} />
       <Stack.Screen name="archive/shows" options={{ title: t('archive.showsTitle') }} />
       <Stack.Screen name="archive/movies" options={{ title: t('archive.moviesTitle') }} />
+      <Stack.Screen name="favorites" options={{ title: t('favorites.title') }} />
       <Stack.Screen name="show/[id]" options={{ title: '' }} />
       <Stack.Screen name="movie/[id]" options={{ title: '' }} />
     </Stack>

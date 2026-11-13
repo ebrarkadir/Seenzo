@@ -12,6 +12,27 @@
     "yourRating": "Your rating",
     "ratingValue": "{{rating}}/10"
   },
+  "rating": {
+    "show": "Rate this show",
+    "movie": "Rate this movie",
+    "episode": "Rate episode",
+    "rate": "Rate",
+    "none": "Not rated",
+    "save": "Save rating",
+    "remove": "Remove rating",
+    "close": "Close"
+  },
+  "favorites": {
+    "add": "Favorite {{title}}",
+    "remove": "Remove favorite {{title}}",
+    "title": "Favorites",
+    "shows": "TV Shows",
+    "movies": "Movies",
+    "emptyShowsTitle": "No favorite shows",
+    "emptyShowsBody": "Tap the heart on a series poster to keep it here.",
+    "emptyMoviesTitle": "No favorite movies",
+    "emptyMoviesBody": "Tap the heart on a movie poster to keep it here."
+  },
   "tabs": {
     "tv": "TV Shows",
     "movies": "Movies",
@@ -31,6 +52,8 @@
     "myShowsMeta": "{{count}} tracked",
     "watchedMovies": "Watched movies",
     "watchedMoviesMeta": "{{count}} watched",
+    "favorites": "Favorites",
+    "favoritesMeta": "{{count}} saved",
     "demoKicker": "Development",
     "demoTitle": "Demo tools",
     "demoNote": "These controls are for testing a new user and a populated library. Remove them before release.",

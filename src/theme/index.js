@@ -8,6 +8,7 @@ export const colors = {
   textMuted: '#89939E',
   primary: '#79C4FF',
   onPrimary: '#0C1015',
+  favorite: '#FF6B8A',
   tabBar: '#0C1015',
   tabActive: '#79C4FF',
   tabInactive: '#A2ADB9',

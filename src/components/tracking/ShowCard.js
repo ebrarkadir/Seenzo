@@ -1,9 +1,11 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
+import FavoriteButton from '../media/FavoriteButton';
 import PosterThumb from '../ui/PosterThumb';
 import PrimaryButton from '../ui/PrimaryButton';
 import StatusBadge from '../ui/StatusBadge';
+import { useTracking } from '../../tracking/TrackingContext';
 import { colors, radii, spacing, typography } from '../../theme';
 import {
   deriveShowStatus,
@@ -27,6 +29,9 @@ export default function ShowCard({
   onSecondary,
 }) {
   const { t } = useTranslation();
+  const { favorites, toggleFavorite } = useTracking();
+  const favorite = Boolean(favorites?.shows?.[show.id]);
+  const title = t(show.titleKey);
   const status = deriveShowStatus(show, entry);
   const next = getNextEpisode(show, entry);
   const progress = getProgress(show, entry);
@@ -48,16 +53,17 @@ export default function ShowCard({
 
   return (
     <View style={styles.card}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={t('tv.openShow', { title: t(show.titleKey), status: t(`tv.status.${status}`) })}
-        onPress={onPress}
-        style={styles.row}
-      >
-        <PosterThumb uri={show.poster} status={status} />
-        <View style={styles.body}>
+      <View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('tv.openShow', { title, status: t(`tv.status.${status}`) })}
+          onPress={onPress}
+          style={styles.row}
+        >
+          <PosterThumb uri={show.poster} status={status} />
+          <View style={styles.body}>
           <Text style={styles.title} numberOfLines={2}>
-            {t(show.titleKey)}
+            {title}
           </Text>
           <StatusBadge status={status} />
           <Text style={styles.meta} numberOfLines={2}>
@@ -69,14 +75,21 @@ export default function ShowCard({
             </View>
           ) : null}
         </View>
-      </Pressable>
+        </Pressable>
+        <FavoriteButton
+          active={favorite}
+          label={t(favorite ? 'favorites.remove' : 'favorites.add', { title })}
+          onPress={() => toggleFavorite('show', show.id)}
+          style={styles.heart}
+        />
+      </View>
       {primaryLabel || secondaryLabel ? (
         <View style={styles.actions}>
           {primaryLabel ? (
             <PrimaryButton
               label={primaryLabel}
               onPress={onPrimary}
-              accessibilityLabel={t('tv.actionA11y', { title: t(show.titleKey), action: primaryLabel })}
+              accessibilityLabel={t('tv.actionA11y', { title, action: primaryLabel })}
               style={styles.action}
             />
           ) : null}
@@ -103,6 +116,14 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     gap: spacing.sm + 4,
+  },
+  heart: {
+    position: 'absolute',
+    top: 2,
+    left: 26,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
   },
   body: {
     flex: 1,

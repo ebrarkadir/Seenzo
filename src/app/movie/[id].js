@@ -1,13 +1,13 @@
-import { useEffect } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useNavigation } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 
 import PosterThumb from '../../components/ui/PosterThumb';
 import PrimaryButton from '../../components/ui/PrimaryButton';
-import RatingPicker from '../../components/ui/RatingPicker';
+import RatingSheet from '../../components/ui/RatingSheet';
 import { getMovie } from '../../data/catalog';
-import { colors, spacing, typography } from '../../theme';
+import { colors, radii, spacing, typography } from '../../theme';
 import { useTracking } from '../../tracking/TrackingContext';
 
 export default function MovieDetailScreen() {
@@ -18,6 +18,9 @@ export default function MovieDetailScreen() {
   const navigation = useNavigation();
   const { movies, saveMovie, removeMovie, setMovieRating } = useTracking();
   const entry = movies[movieId];
+  const movieRating = entry?.rating ?? null;
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(null);
 
   useEffect(() => {
     navigation.setOptions({ title: movie ? t(movie.titleKey) : t('movies.notFound') });
@@ -45,7 +48,19 @@ export default function MovieDetailScreen() {
         </View>
       </View>
       <Text style={styles.body}>{t(movie.synopsisKey)}</Text>
-      {saved ? <RatingPicker value={entry.rating} onChange={(rating) => setMovieRating(movie.id, rating)} /> : null}
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => {
+          setDraft(movieRating);
+          setOpen(true);
+        }}
+        style={styles.rateRow}
+      >
+        <Text style={styles.rateLabel}>{t('rating.movie')}</Text>
+        <Text style={styles.rateValue}>
+          {movieRating ? t('common.ratingValue', { rating: movieRating }) : t('rating.none')}
+        </Text>
+      </Pressable>
       <View style={styles.actions}>
         {watched ? (
           <PrimaryButton
@@ -69,6 +84,25 @@ export default function MovieDetailScreen() {
           />
         ) : null}
       </View>
+      <RatingSheet
+        visible={open}
+        title={t('rating.movie')}
+        value={draft}
+        savedValue={movieRating}
+        onChange={setDraft}
+        onClose={() => setOpen(false)}
+        onSave={() => {
+          if (draft == null) {
+            return;
+          }
+          setMovieRating(movie.id, draft);
+          setOpen(false);
+        }}
+        onRemove={() => {
+          setMovieRating(movie.id, null);
+          setOpen(false);
+        }}
+      />
     </ScrollView>
   );
 }
@@ -111,5 +145,27 @@ const styles = StyleSheet.create({
   },
   actions: {
     gap: spacing.sm,
+  },
+  rateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    minHeight: 52,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  rateLabel: {
+    ...typography.body,
+    color: colors.text,
+    fontWeight: '600',
+  },
+  rateValue: {
+    ...typography.body,
+    color: colors.primary,
+    fontWeight: '700',
   },
 });

@@ -19,7 +19,7 @@ export default function DiscoverScreen() {
   const [manualFilter, setManualFilter] = useState(null);
   const [query, setQuery] = useState('');
   const filter = manualFilter && manualFilter.routeType === routeType ? manualFilter.value : routeType;
-  const { shows: trackedShows, movies: trackedMovies } = useTracking();
+  const { shows: trackedShows, movies: trackedMovies, favorites, toggleFavorite } = useTracking();
   const normalized = query.trim().toLowerCase();
 
   const visibleShows = useMemo(() => {
@@ -56,12 +56,17 @@ export default function DiscoverScreen() {
         renderItem={(item, size) => {
           if (filter === 'tv') {
             const tracked = Boolean(trackedShows[item.id]);
+            const favorite = Boolean(favorites?.shows?.[item.id]);
+            const title = t(item.titleKey);
             return (
               <PosterTile
                 uri={item.poster}
-                title={t(item.titleKey)}
+                title={title}
                 meta={t(`tv.release.${item.releaseStatus}`)}
                 badge={tracked ? t('discover.inLibrary') : null}
+                favorite={favorite}
+                favoriteLabel={t(favorite ? 'favorites.remove' : 'favorites.add', { title })}
+                onFavorite={() => toggleFavorite('show', item.id)}
                 width={size.width}
                 height={size.height}
                 onPress={() => router.push(`/show/${item.id}`)}
@@ -69,12 +74,17 @@ export default function DiscoverScreen() {
             );
           }
           const tracked = Boolean(trackedMovies[item.id]?.saved);
+          const favorite = Boolean(favorites?.movies?.[item.id]);
+          const title = t(item.titleKey);
           return (
             <PosterTile
               uri={item.poster}
-              title={t(item.titleKey)}
+              title={title}
               meta={`${item.year} · ${t(item.genreKey)}`}
               badge={tracked ? t('discover.inLibrary') : null}
+              favorite={favorite}
+              favoriteLabel={t(favorite ? 'favorites.remove' : 'favorites.add', { title })}
+              onFavorite={() => toggleFavorite('movie', item.id)}
               width={size.width}
               height={size.height}
               onPress={() => router.push(`/movie/${item.id}`)}

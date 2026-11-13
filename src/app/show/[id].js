@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { useUndoTimer } from '../../tracking/useUndoTimer';
 import PosterThumb from '../../components/ui/PosterThumb';
 import PrimaryButton from '../../components/ui/PrimaryButton';
-import RatingPicker from '../../components/ui/RatingPicker';
+import RatingSheet from '../../components/ui/RatingSheet';
 import StatusBadge from '../../components/ui/StatusBadge';
 import UndoBar from '../../components/tracking/UndoBar';
 import { getShow } from '../../data/catalog';
@@ -33,10 +33,16 @@ export default function ShowDetailScreen() {
     setShowIntent,
     removeShow,
     setShowRating,
+    setEpisodeRating,
+    showRatings,
+    episodeRatings,
   } = useTracking();
   useUndoTimer();
   const entry = shows[showId];
+  const showRating = entry?.rating ?? showRatings?.[showId] ?? null;
   const [season, setSeason] = useState(show?.seasons[0]?.season || 1);
+  const [sheet, setSheet] = useState(null);
+  const [draft, setDraft] = useState(null);
 
   useEffect(() => {
     navigation.setOptions({ title: show ? t(show.titleKey) : t('tv.notFound') });
@@ -72,9 +78,19 @@ export default function ShowDetailScreen() {
           </View>
         </View>
         <Text style={styles.body}>{t(show.synopsisKey)}</Text>
-        {entry ? (
-          <RatingPicker value={entry.rating} onChange={(rating) => setShowRating(show.id, rating)} />
-        ) : null}
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => {
+            setDraft(showRating);
+            setSheet({ type: 'show' });
+          }}
+          style={styles.rateRow}
+        >
+          <Text style={styles.episodeTitle}>{t('rating.show')}</Text>
+          <Text style={styles.rateValue}>
+            {showRating ? t('common.ratingValue', { rating: showRating }) : t('rating.none')}
+          </Text>
+        </Pressable>
         <View style={styles.actions}>
           <PrimaryButton
             label={t('tv.status.plan')}
@@ -120,36 +136,83 @@ export default function ShowDetailScreen() {
           const released = isReleased(episode);
           const isWatched = watched.has(episode.id);
           const code = t('common.episodeCode', episodeCode(episode));
+          const episodeRating = episodeRatings?.[episode.id] ?? null;
           return (
-            <Pressable
-              key={episode.id}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: isWatched, disabled: !released }}
-              disabled={!released}
-              onPress={() => toggleEpisode(show.id, episode.id)}
-              style={styles.episode}
-            >
-              <Ionicons
-                name={released ? (isWatched ? 'checkmark-circle' : 'ellipse-outline') : 'lock-closed-outline'}
-                size={22}
-                color={released ? (isWatched ? colors.primary : colors.textMuted) : colors.textMuted}
-              />
-              <View style={styles.episodeCopy}>
-                <Text style={styles.episodeTitle}>
-                  {code} · {t(episode.titleKey)}
-                </Text>
-                <Text style={styles.meta}>
-                  {released
-                    ? t('common.minutes', { count: episode.runtime })
-                    : t('tv.upcoming', { date: formatAirDate(episode.airDate) })}
-                </Text>
-              </View>
-            </Pressable>
+            <View key={episode.id} style={styles.episode}>
+              <Pressable
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: isWatched, disabled: !released }}
+                disabled={!released}
+                onPress={() => toggleEpisode(show.id, episode.id)}
+                style={styles.episodeMain}
+              >
+                <Ionicons
+                  name={released ? (isWatched ? 'checkmark-circle' : 'ellipse-outline') : 'lock-closed-outline'}
+                  size={22}
+                  color={released ? (isWatched ? colors.primary : colors.textMuted) : colors.textMuted}
+                />
+                <View style={styles.episodeCopy}>
+                  <Text style={styles.episodeTitle}>
+                    {code} · {t(episode.titleKey)}
+                  </Text>
+                  <Text style={styles.meta}>
+                    {released
+                      ? t('common.minutes', { count: episode.runtime })
+                      : t('tv.upcoming', { date: formatAirDate(episode.airDate) })}
+                  </Text>
+                </View>
+              </Pressable>
+              {released ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t('rating.episode')}
+                  onPress={() => {
+                    setDraft(episodeRating);
+                    setSheet({ type: 'episode', id: episode.id, title: `${code} · ${t(episode.titleKey)}` });
+                  }}
+                  style={styles.rateChip}
+                >
+                  <Text style={styles.rateValue}>
+                    {episodeRating ? t('common.ratingValue', { rating: episodeRating }) : t('rating.rate')}
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
           );
         })}
         <Text style={styles.note}>{t('tv.unreleasedNote')}</Text>
       </ScrollView>
       <UndoBar bottom={16} />
+      <RatingSheet
+        visible={Boolean(sheet)}
+        title={sheet?.type === 'episode' ? sheet.title : t('rating.show')}
+        value={draft}
+        savedValue={sheet?.type === 'episode' ? episodeRatings?.[sheet.id] ?? null : showRating}
+        onChange={setDraft}
+        onClose={() => setSheet(null)}
+        onSave={() => {
+          if (draft == null || !sheet) {
+            return;
+          }
+          if (sheet.type === 'episode') {
+            setEpisodeRating(sheet.id, draft);
+          } else {
+            setShowRating(show.id, draft);
+          }
+          setSheet(null);
+        }}
+        onRemove={() => {
+          if (!sheet) {
+            return;
+          }
+          if (sheet.type === 'episode') {
+            setEpisodeRating(sheet.id, null);
+          } else {
+            setShowRating(show.id, null);
+          }
+          setSheet(null);
+        }}
+      />
     </View>
   );
 }
@@ -219,6 +282,23 @@ const styles = StyleSheet.create({
   seasonTextSelected: {
     color: colors.onPrimary,
   },
+  rateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    minHeight: 52,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  rateValue: {
+    ...typography.body,
+    color: colors.primary,
+    fontWeight: '700',
+  },
   episode: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -226,6 +306,23 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
     borderRadius: radii.md,
     backgroundColor: colors.surface,
+  },
+  episodeMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  rateChip: {
+    minWidth: 64,
+    minHeight: 40,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radii.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   episodeCopy: {
     flex: 1,

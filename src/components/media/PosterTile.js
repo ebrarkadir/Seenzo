@@ -2,6 +2,7 @@ import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { colors, radii, spacing, typography } from '../../theme';
+import FavoriteButton from './FavoriteButton';
 
 export function posterSize(windowWidth) {
   const gap = spacing.sm + 4;
@@ -24,6 +25,9 @@ export default function PosterTile({
   accessibilityState,
   quickLabel,
   onQuick,
+  favorite,
+  onFavorite,
+  favoriteLabel,
 }) {
   return (
     <View style={{ width }}>
@@ -51,12 +55,15 @@ export default function PosterTile({
           </Text>
         ) : null}
       </Pressable>
+      {onFavorite ? (
+        <FavoriteButton active={favorite} label={favoriteLabel} onPress={onFavorite} style={styles.favorite} />
+      ) : null}
       {onQuick ? (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={quickLabel}
           onPress={onQuick}
-          hitSlop={6}
+          hitSlop={8}
           style={styles.quick}
         >
           <Ionicons name="checkmark" size={16} color={colors.onPrimary} />
@@ -118,10 +125,15 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.text,
   },
-  quick: {
+  favorite: {
     position: 'absolute',
     top: spacing.sm,
     right: spacing.sm,
+  },
+  quick: {
+    position: 'absolute',
+    top: spacing.sm,
+    left: spacing.sm,
     width: 32,
     height: 32,
     borderRadius: 16,
