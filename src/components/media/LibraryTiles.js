@@ -9,7 +9,7 @@ import { useTracking } from '../../tracking/TrackingContext';
 import { isMovieWatchlisted, isShowWatchlisted, movieBookmarkVisible, showBookmarkVisible } from '../../tracking/watchlist';
 import PosterTile from './PosterTile';
 
-export function ShowPoster({ show, entry, width, height, onPress, onStart, onRemove }) {
+export function ShowPoster({ show, entry, width, height, onPress, onRemove }) {
   const { t } = useTranslation();
   const { toggleShowWatchlist } = useTracking();
   const status = entry ? deriveShowStatus(show, entry) : null;
@@ -36,12 +36,9 @@ export function ShowPoster({ show, entry, width, height, onPress, onStart, onRem
           status: status ? t(`tv.status.${status}`) : t('tv.notTracking'),
         })}
       />
-      {onStart || onRemove ? (
+      {onRemove ? (
         <View style={styles.actions}>
-          {onStart ? (
-            <IconButton name="play-outline" label={t('tv.startWatching')} onPress={onStart} />
-          ) : null}
-          {onRemove ? <IconButton name="close-outline" label={t('common.remove')} onPress={onRemove} /> : null}
+          <IconButton name="close-outline" label={t('common.remove')} onPress={onRemove} />
         </View>
       ) : null}
     </View>

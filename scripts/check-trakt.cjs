@@ -77,7 +77,7 @@ expect(
 
 const normalize = loadModule(
   'src/services/trakt/normalize.js',
-  'toAppShow, toAppMovie, pickPosterPath, airDateFromTrakt, traktShowKey'
+  'toAppShow, toAppMovie, pickPosterPath, airDateFromTrakt, traktShowKey, seasonNeedsEpisodeFetch, mergeCatalogPage'
 );
 const show = normalize.toAppShow(
   {
@@ -98,8 +98,28 @@ expect('show id is provider qualified', show.id, 'trakt-show-42');
 expect('thumb poster is preferred', show.posterPath.endsWith('/thumb/b.webp'), true);
 expect('episode air date is the calendar date', show.seasons[0].episodes[0].airDate, '2010-01-02');
 expect('missing air date stays empty', normalize.airDateFromTrakt(null), null);
+expect('impossible air date stays empty', normalize.airDateFromTrakt('2026-13-40T00:00:00.000Z'), null);
+expect('season without episodes needs a fetch', normalize.seasonNeedsEpisodeFetch({ number: 2, episodes: [] }), true);
+expect('season that already includes episodes is not fetched again', normalize.seasonNeedsEpisodeFetch({ number: 2, episodes: [{ ids: { trakt: 1 } }] }), false);
+expect('season without a number is not fetched', normalize.seasonNeedsEpisodeFetch({ episodes: [] }), false);
+expect(
+  'later pages do not duplicate titles',
+  normalize.mergeCatalogPage([{ id: 'trakt-movie-1' }, { id: 'trakt-movie-2' }], [{ id: 'trakt-movie-2' }, { id: 'trakt-movie-3' }]).map((item) => item.id),
+  ['trakt-movie-1', 'trakt-movie-2', 'trakt-movie-3']
+);
+const parentSeason = normalize.toAppShow(
+  { title: 'Seasoned', ids: { trakt: 5 }, status: 'returning' },
+  [{ number: 1, episodes: [{ number: 1, title: 'One', ids: { trakt: 9 }, first_aired: '2024-05-06T00:00:00.000Z' }] }],
+  true
+);
+expect('episode uses the season number when the episode omits it', parentSeason.seasons[0].episodes[0].season, 1);
 expect('movie id does not collide with show id', normalize.toAppMovie({ title: 'Example', ids: { trakt: 42 } }).id, 'trakt-movie-42');
 expect('normalized show does not keep image urls in other fields', JSON.stringify({ title: show.title, overview: show.overview }).includes('trakt.tv'), false);
+
+const artwork = loadModule('src/services/artwork/url.js', 'artworkRemoteUrl');
+expect('artwork accepts a trakt thumb path', artwork.artworkRemoteUrl('walter.trakt.tv/images/posters/thumb/a.webp').includes('/thumb/'), true);
+expect('artwork rejects a non-trakt host', artwork.artworkRemoteUrl('https://example.com/poster.webp'), null);
+expect('artwork rejects a path that leaves the cache key', artwork.artworkRemoteUrl('walter.trakt.tv/images/../../secret.webp'), null);
 
 const failed = checks.filter((check) => !check.pass);
 if (failed.length) {

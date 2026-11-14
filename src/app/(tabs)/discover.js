@@ -12,6 +12,7 @@ import { rememberMovie, rememberShow } from '../../data/mediaLibrary';
 import { colors, spacing, typography } from '../../theme';
 import { isMovieWatchlisted, isShowWatchlisted, movieBookmarkVisible, showBookmarkVisible } from '../../tracking/watchlist';
 import { getTraktConfigStatus } from '../../services/trakt/config';
+import { mergeCatalogPage } from '../../services/trakt/normalize';
 import {
   searchMoviesPage,
   searchShowsPage,
@@ -105,9 +106,10 @@ export default function DiscoverScreen() {
     setLoading(true);
     task
       .then((result) => {
-        setItems((current) => [...current, ...result.items]);
+        setItems((current) => mergeCatalogPage(current, result.items));
         setPage(result.page);
         setPageCount(result.pageCount);
+        setError(null);
       })
       .catch((requestError) => setError(requestError))
       .finally(() => setLoading(false));

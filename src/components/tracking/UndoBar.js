@@ -15,7 +15,11 @@ export default function UndoBar({ bottom = 12 }) {
   return (
     <View style={[styles.bar, { bottom }]}>
       <Text style={styles.message} numberOfLines={2}>
-        {t('tv.undoMessage', { title: undo.episodeTitle || (undo.episodeTitleKey ? t(undo.episodeTitleKey) : '') })}
+        {undo.kind === 'season'
+          ? t(undo.removed?.length && !undo.added?.length ? 'tv.undoSeasonUnwatched' : 'tv.undoSeasonWatched', {
+            label: undo.seasonNumber === 0 ? t('tv.seasonSpecials') : t('tv.season', { number: undo.seasonNumber }),
+          })
+          : t('tv.undoMessage', { title: undo.episodeTitle || (undo.episodeTitleKey ? t(undo.episodeTitleKey) : '') })}
       </Text>
       <View style={styles.actions}>
         <Pressable accessibilityRole="button" onPress={undoLast} hitSlop={8}>

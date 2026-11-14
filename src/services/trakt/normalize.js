@@ -30,12 +30,48 @@ export function pickPosterPath(images) {
   return path || null;
 }
 
+export function pickHeadshotPath(images) {
+  const shots = images?.headshot;
+  if (!Array.isArray(shots) || shots.length === 0) {
+    return null;
+  }
+  const thumb = shots.find((item) => typeof item === 'string' && item.includes('/thumb/'));
+  const medium = shots.find((item) => typeof item === 'string' && item.includes('/medium/'));
+  const path = thumb || medium || shots.find((item) => typeof item === 'string');
+  return path || null;
+}
+
 export function airDateFromTrakt(value) {
   if (typeof value !== 'string') {
     return null;
   }
   const match = value.match(/^(\d{4}-\d{2}-\d{2})/);
-  return match ? match[1] : null;
+  if (!match) {
+    return null;
+  }
+  const [year, month, day] = match[1].split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+    return null;
+  }
+  return match[1];
+}
+
+export function seasonNeedsEpisodeFetch(season) {
+  return typeof season?.number === 'number' && (!Array.isArray(season.episodes) || season.episodes.length === 0);
+}
+
+export function mergeCatalogPage(current, incoming) {
+  const seen = new Set((current || []).map((item) => item?.id).filter(Boolean));
+  const next = [];
+  (incoming || []).forEach((item) => {
+    if (!item?.id || seen.has(item.id)) {
+      return;
+    }
+    seen.add(item.id);
+    next.push(item);
+  });
+  return [...(current || []), ...next];
 }
 
 export function mapReleaseStatus(status) {
@@ -51,20 +87,23 @@ export function mapReleaseStatus(status) {
   return 'ongoing';
 }
 
-function toEpisode(episode) {
+function toEpisode(episode, seasonNumber) {
   const traktId = episode?.ids?.trakt;
-  if (!traktId || typeof episode.number !== 'number') {
+  const season = typeof episode?.season === 'number' ? episode.season : seasonNumber;
+  if (!traktId || typeof episode?.number !== 'number' || typeof season !== 'number') {
     return null;
   }
   return {
     id: traktEpisodeKey(traktId),
     traktId,
-    season: episode.season ?? null,
+    season,
     number: episode.number,
     title: episode.title || '',
+    overview: typeof episode.overview === 'string' ? episode.overview : '',
     runtime: typeof episode.runtime === 'number' ? episode.runtime : null,
     airDate: airDateFromTrakt(episode.first_aired),
     communityRating: typeof episode.rating === 'number' ? episode.rating : null,
+    posterPath: pickPosterPath(episode.images),
   };
 }
 
@@ -76,7 +115,9 @@ function toSeason(season) {
     season: season.number,
     title: season.title || '',
     episodeCount: typeof season.episode_count === 'number' ? season.episode_count : null,
-    episodes: Array.isArray(season.episodes) ? season.episodes.map(toEpisode).filter(Boolean) : [],
+    episodes: Array.isArray(season.episodes)
+      ? season.episodes.map((episode) => toEpisode(episode, season.number)).filter(Boolean)
+      : [],
   };
 }
 

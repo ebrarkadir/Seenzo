@@ -4,13 +4,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 
+import { useAuth } from '../../auth/AuthContext';
 import PrimaryButton from '../../components/ui/PrimaryButton';
 import { colors, radii, spacing, typography } from '../../theme';
 import { useTracking } from '../../tracking/TrackingContext';
 
 export default function ProfileScreen() {
   const { t } = useTranslation();
-  const { shows, movies, demoMode, loadDemo, clearLocalData, restartOnboarding } = useTracking();
+  const { ready: authReady, email, signOut } = useAuth();
+  const { shows, movies, demoMode, loadDemo, clearLocalData, restartOnboarding, syncStatus } = useTracking();
+  const signedIn = Boolean(email);
 
   const stats = useMemo(() => {
     const showCount = Object.keys(shows).length;
@@ -36,10 +39,32 @@ export default function ProfileScreen() {
           <Ionicons name="person" size={28} color={colors.primary} />
         </View>
         <View style={styles.identityCopy}>
-          <Text style={styles.name}>{t('profile.userName')}</Text>
-          <Text style={styles.note}>{t('profile.localNote')}</Text>
+          <Text style={styles.name}>{signedIn ? email : t('profile.guestTitle')}</Text>
+          <Text style={styles.note}>{signedIn ? t('profile.localNote') : t('profile.guestBody')}</Text>
         </View>
       </View>
+      {authReady && !signedIn ? (
+        <View style={styles.actions}>
+          <PrimaryButton label={t('profile.signIn')} onPress={() => router.push('/sign-in')} />
+          <PrimaryButton label={t('profile.createAccount')} variant="secondary" onPress={() => router.push('/sign-up')} />
+        </View>
+      ) : null}
+      {signedIn ? (
+        <View style={styles.panel}>
+          <Text style={styles.kicker}>{t('profile.account')}</Text>
+          <Text style={styles.panelBody}>{email}</Text>
+          <Text style={styles.panelBody}>
+            {t(syncStatus === 'saving' ? 'profile.syncSaving' : syncStatus === 'error' ? 'sync.error' : 'profile.syncSaved')}
+          </Text>
+          <PrimaryButton
+            label={t('profile.logout')}
+            variant="secondary"
+            onPress={() => confirm(t('profile.logoutTitle'), t('profile.logoutMessage'), () => {
+              signOut();
+            })}
+          />
+        </View>
+      ) : null}
       <View style={styles.stats}>
         <Stat value={stats.showCount} label={t('profile.statShows')} />
         <Stat value={stats.movieCount} label={t('profile.statMovies')} />
@@ -69,7 +94,7 @@ export default function ProfileScreen() {
         <PrimaryButton
           label={t('profile.clearData')}
           variant="secondary"
-          onPress={() => confirm(t('profile.clearTitle'), t('profile.clearMessage'), clearLocalData)}
+          onPress={() => confirm(t('profile.clearTitle'), t(signedIn ? 'profile.clearAccountMessage' : 'profile.clearMessage'), clearLocalData)}
         />
         <PrimaryButton
           label={t('profile.restartOnboarding')}
@@ -126,6 +151,9 @@ const styles = StyleSheet.create({
   identityCopy: {
     flex: 1,
     gap: 4,
+  },
+  actions: {
+    gap: spacing.sm,
   },
   name: {
     ...typography.title,

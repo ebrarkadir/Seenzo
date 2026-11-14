@@ -6,10 +6,28 @@ export function dateKey(date = new Date()) {
 }
 
 export function listEpisodes(show) {
-  return (show?.seasons || [])
-    .flatMap((season) => season.episodes || [])
-    .slice()
-    .sort((a, b) => a.season - b.season || a.number - b.number);
+  const episodes = (show?.seasons || []).flatMap((season) =>
+    (season?.episodes || []).map((episode) => {
+      if (!episode?.id) {
+        return null;
+      }
+      const seasonNumber = Number(episode.season ?? season?.season);
+      const number = Number(episode.number);
+      if (!Number.isFinite(seasonNumber) || !Number.isFinite(number)) {
+        return null;
+      }
+      return { ...episode, season: seasonNumber, number };
+    })
+  ).filter(Boolean);
+  episodes.sort((a, b) => a.season - b.season || a.number - b.number || String(a.id).localeCompare(String(b.id)));
+  const seen = new Set();
+  return episodes.filter((episode) => {
+    if (seen.has(episode.id)) {
+      return false;
+    }
+    seen.add(episode.id);
+    return true;
+  });
 }
 
 export function isReleased(episode, today = dateKey()) {
@@ -31,12 +49,13 @@ export function deriveShowStatus(show, entry, today = dateKey()) {
     return 'dropped';
   }
 
+  const released = releasedEpisodes(show, today);
   const watched = new Set(entry.watchedEpisodeIds || []);
-  const hasUnwatched = releasedEpisodes(show, today).some((episode) => !watched.has(episode.id));
-  if (hasUnwatched) {
+  const watchedReleased = released.filter((episode) => watched.has(episode.id)).length;
+  if (released.length === 0 || watchedReleased < released.length) {
     return 'watching';
   }
-  if (show.releaseStatus === 'ended') {
+  if (show?.releaseStatus === 'ended') {
     return 'completed';
   }
   return 'caughtUp';
@@ -54,6 +73,32 @@ export function getProgress(show, entry, today = dateKey()) {
   return { watched: watchedCount, total: released.length };
 }
 
+export function seasonReleasedEpisodes(show, seasonNumber, today = dateKey()) {
+  return listEpisodes(show).filter(
+    (episode) => episode.season === seasonNumber && isReleased(episode, today)
+  );
+}
+
+export function getSeasonProgress(show, entry, seasonNumber, today = dateKey()) {
+  const released = seasonReleasedEpisodes(show, seasonNumber, today);
+  const watched = new Set(entry?.watchedEpisodeIds || []);
+  return {
+    watched: released.filter((episode) => watched.has(episode.id)).length,
+    total: released.length,
+  };
+}
+
+export function listShowSeasons(show) {
+  const numbers = new Set();
+  (show?.seasons || []).forEach((season) => {
+    if (typeof season?.season === 'number') {
+      numbers.add(season.season);
+    }
+  });
+  listEpisodes(show).forEach((episode) => numbers.add(episode.season));
+  return [...numbers].sort((a, b) => a - b);
+}
+
 export function watchedThroughIds(show, episodeId, today = dateKey()) {
   const released = releasedEpisodes(show, today);
   const index = released.findIndex((episode) => episode.id === episodeId);
@@ -63,10 +108,12 @@ export function watchedThroughIds(show, episodeId, today = dateKey()) {
   return released.slice(0, index + 1).map((episode) => episode.id);
 }
 
-export function lastWatchedEpisode(show, entry) {
+export function lastWatchedEpisode(show, entry, today = dateKey()) {
   const watched = new Set(entry?.watchedEpisodeIds || []);
-  const episodes = listEpisodes(show).filter((episode) => watched.has(episode.id));
-  return episodes.length ? episodes[episodes.length - 1] : null;
+  const episodes = listEpisodes(show).filter((episode) => watched.has(episode.id) && isReleased(episode, today));
+  const main = episodes.filter((episode) => episode.season !== 0);
+  const pool = main.length ? main : episodes;
+  return pool.length ? pool[pool.length - 1] : null;
 }
 
 export function upcomingForShows(pairs, today = dateKey()) {
@@ -82,7 +129,7 @@ export function upcomingForShows(pairs, today = dateKey()) {
         id: episode.id,
         show,
         episode,
-        kind: !seasonStarted && episode.number === 1 ? 'season' : 'episode',
+        kind: episode.season !== 0 && !seasonStarted && episode.number === 1 ? 'season' : 'episode',
         airDate: episode.airDate || null,
       });
     });

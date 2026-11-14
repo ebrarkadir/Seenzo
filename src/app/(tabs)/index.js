@@ -19,7 +19,7 @@ import { deriveShowStatus, upcomingForShows } from '../../tracking/status';
 
 export default function TvShowsScreen() {
   const { t } = useTranslation();
-  const { shows, undo, markNextWatched, setShowIntent, removeShow } = useTracking();
+  const { shows, undo, markNextWatched, removeShow } = useTracking();
   const revision = useMediaRevision();
   const [segment, setSegment] = useState('watching');
   useUndoTimer();
@@ -82,7 +82,6 @@ export default function TvShowsScreen() {
               width={size.width}
               height={size.height}
               onPress={() => router.push(`/show/${item.show.id}`)}
-              onStart={() => setShowIntent(item.show.id, 'watching')}
               onRemove={() => removeShow(item.show.id)}
             />
           )}

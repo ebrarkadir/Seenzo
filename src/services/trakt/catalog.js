@@ -1,8 +1,10 @@
 import { traktGet } from './client';
-import { movieFromSearch, showFromSearch, toAppMovie, toAppShow } from './normalize';
+import { movieFromSearch, seasonNeedsEpisodeFetch, showFromSearch, toAppMovie, toAppShow } from './normalize';
 
 const PAGE_SIZE = 20;
 const memory = new Map();
+const hydratingShows = new Map();
+const hydratingMovies = new Map();
 const TRENDING_TTL_MS = 10 * 60 * 1000;
 
 function rememberList(key, value) {
@@ -56,14 +58,16 @@ export async function trendingMoviesPage(page = 1) {
   return rememberList(key, result);
 }
 
-export async function hydrateShow(traktId) {
+async function hydrateShowNow(traktId) {
   const summary = await traktGet(`/shows/${encodeURIComponent(traktId)}`, { extended: 'full' });
   const seasonResult = await traktGet(`/shows/${encodeURIComponent(traktId)}/seasons`, { extended: 'full' });
   const seasons = Array.isArray(seasonResult.data) ? seasonResult.data : [];
   const filled = [];
   for (const season of seasons) {
-    if (Array.isArray(season.episodes) && season.episodes.length > 0) {
-      filled.push(season);
+    if (!seasonNeedsEpisodeFetch(season)) {
+      if (typeof season?.number === 'number') {
+        filled.push(season);
+      }
       continue;
     }
     try {
@@ -85,7 +89,26 @@ export async function hydrateShow(traktId) {
   return toAppShow(summary.data, filled, true);
 }
 
-export async function hydrateMovie(traktId) {
-  const summary = await traktGet(`/movies/${encodeURIComponent(traktId)}`, { extended: 'full' });
-  return toAppMovie(summary.data);
+export function hydrateShow(traktId) {
+  const key = String(traktId);
+  const pending = hydratingShows.get(key);
+  if (pending) {
+    return pending;
+  }
+  const task = hydrateShowNow(key).finally(() => hydratingShows.delete(key));
+  hydratingShows.set(key, task);
+  return task;
+}
+
+export function hydrateMovie(traktId) {
+  const key = String(traktId);
+  const pending = hydratingMovies.get(key);
+  if (pending) {
+    return pending;
+  }
+  const task = traktGet(`/movies/${encodeURIComponent(key)}`, { extended: 'full' })
+    .then((summary) => toAppMovie(summary.data))
+    .finally(() => hydratingMovies.delete(key));
+  hydratingMovies.set(key, task);
+  return task;
 }

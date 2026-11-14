@@ -1,14 +1,101 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { useAuth } from '../auth/AuthContext';
 import { demoTracking } from '../data/demoTracking';
-import { resolveMovie as getMovie, resolveShow as getShow } from '../data/mediaLibrary';
-import { getNextEpisode, isReleased, watchedThroughIds } from './status';
-import { applyMovieWatchlistToggle, applyShowWatchlistToggle, migrateFavorites, removeTrackedShow } from './watchlist';
-
-const STORAGE_KEY = 'seenzo.tracking.v1';
+import { rememberMovie, rememberShow, resolveMovie as getMovie, resolveShow as getShow } from '../data/mediaLibrary';
+import { parseTraktMovieKey, parseTraktShowKey } from '../services/trakt/normalize';
+import { hydrateMovie, hydrateShow } from '../services/trakt/catalog';
+import { pullTracking, pushTracking, trackingClient } from '../services/supabase/trackingSync';
+import {
+  emptyGuestState,
+  isGuestFresh,
+  markGuestFresh,
+  readAccountEnvelope,
+  readGuestSession,
+  writeAccountEnvelope,
+  writeGuestSession,
+} from './accountStore';
+import {
+  adoptKeptEpisodes,
+  applyQueue,
+  emptyStamps,
+  hasQueueWork,
+  hasTrackingRecords,
+  isCurrentScope,
+  learnEpisodeMeta,
+  mergeRemoteAndLocal,
+  queueForSync,
+  stateFromRemote,
+} from './cloudState';
+import {
+  markNextReleased,
+  markSeasonUnwatched,
+  markSeasonWatched,
+  toggleReleasedEpisode,
+  undoEpisodeChanges,
+} from './progress';
+import { listEpisodes, watchedThroughIds } from './status';
+import {
+  applyEpisodeRating,
+  applyMovieChanges,
+  applyMovieRating,
+  applyMovieWatchlistToggle,
+  applyShowIntent,
+  applyShowRating,
+  applyShowWatchlistToggle,
+  removeTrackedShow,
+  showEntry,
+} from './watchlist';
 
 const TrackingContext = createContext(null);
+
+function episodeLookup(state, episodeId) {
+  const showIds = new Set(Object.keys(state.shows || {}));
+  Object.values(state.keptEpisodes || {}).forEach((episode) => {
+    if (episode?.showId) {
+      showIds.add(episode.showId);
+    }
+  });
+  for (const showId of showIds) {
+    const match = listEpisodes(getShow(showId)).find((episode) => episode.id === episodeId);
+    if (match) {
+      return { showId, season: match.season, number: match.number };
+    }
+  }
+  return null;
+}
+
+function rehydrateCatalog(state) {
+  const showIds = new Set([
+    ...Object.keys(state.shows || {}),
+    ...Object.keys(state.showRatings || {}),
+    ...Object.values(state.keptEpisodes || {}).map((episode) => episode.showId),
+  ]);
+  showIds.forEach((id) => {
+    const traktId = parseTraktShowKey(id);
+    if (!traktId || getShow(id)) {
+      return;
+    }
+    hydrateShow(traktId).then((show) => {
+      if (show) {
+        rememberShow(show);
+      }
+    }).catch(() => {});
+  });
+  Object.keys(state.movies || {}).forEach((id) => {
+    const traktId = parseTraktMovieKey(id);
+    if (!traktId || getMovie(id)) {
+      return;
+    }
+    hydrateMovie(traktId).then((movie) => {
+      if (movie) {
+        rememberMovie(movie);
+      }
+    }).catch(() => {});
+  });
+}
 
 function emptyState() {
   return {
@@ -21,111 +108,251 @@ function emptyState() {
   };
 }
 
-function showEntry(partial = {}) {
-  return {
-    intent: partial.intent || 'plan',
-    watchedEpisodeIds: partial.watchedEpisodeIds || [],
-    rating: partial.rating ?? null,
-  };
-}
-
-function movieEntry(partial) {
-  return {
-    saved: true,
-    watched: false,
-    rating: null,
-    ...partial,
-  };
-}
-
-function idMap(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return {};
-  }
-  return value;
-}
-
-function ratingMap(value) {
-  const next = {};
-  Object.entries(idMap(value)).forEach(([key, rating]) => {
-    const clamped = clampRating(rating);
-    if (clamped != null) {
-      next[key] = clamped;
-    }
-  });
-  return next;
-}
-
-function normalize(raw) {
-  if (!raw || typeof raw !== 'object') {
-    return emptyState();
-  }
-  const migrated = migrateFavorites({
-    shows: raw.shows && typeof raw.shows === 'object' ? raw.shows : {},
-    movies: raw.movies && typeof raw.movies === 'object' ? raw.movies : {},
-    favorites: raw.favorites,
-  });
-  return {
-    onboardingComplete: Boolean(raw.onboardingComplete),
-    demoMode: Boolean(raw.demoMode),
-    shows: migrated.shows,
-    movies: migrated.movies,
-    showRatings: ratingMap(raw.showRatings),
-    episodeRatings: ratingMap(raw.episodeRatings),
-  };
-}
-
-function clampRating(rating) {
-  if (rating == null) {
-    return null;
-  }
-  const value = Number(rating);
-  if (!Number.isInteger(value) || value < 1 || value > 10) {
-    return null;
-  }
-  return value;
-}
-
 export function TrackingProvider({ children }) {
+  const { ready: authReady, session } = useAuth();
+  const userId = session?.user?.id || null;
+  const scopeKey = authReady ? (userId || 'guest') : null;
+  const [appliedKey, setAppliedKey] = useState(null);
+  const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState(emptyState);
   const [ready, setReady] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [cacheRestored, setCacheRestored] = useState(false);
+  const [syncStatus, setSyncStatus] = useState('saved');
   const [undo, setUndo] = useState(null);
   const undoRef = useRef(null);
+  const serverRef = useRef(emptyState());
+  const stampsRef = useRef(emptyStamps());
+  const scopeRef = useRef({ id: 0, key: null });
+  const flushRef = useRef(false);
+  const readyRef = useRef(false);
+  const userRef = useRef(null);
+  const stateRef = useRef(emptyState());
+  const flushImpl = useRef(async () => {});
+  const previousUserRef = useRef(undefined);
+  const guestFreshRef = useRef(false);
+
+  if (scopeKey !== appliedKey) {
+    setAppliedKey(scopeKey);
+    setReady(false);
+    setState(emptyState());
+    setLoadError(false);
+    setCacheRestored(false);
+    setSyncStatus('saved');
+    setUndo(null);
+  }
 
   const updateUndo = useCallback((value) => {
     undoRef.current = value;
     setUndo(value);
   }, []);
 
+  const commit = useCallback((updater) => {
+    setState((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      return learnEpisodeMeta(adoptKeptEpisodes(next), episodeLookup);
+    });
+  }, []);
+
   useEffect(() => {
+    readyRef.current = ready;
+    userRef.current = userId;
+    stateRef.current = state;
+    undoRef.current = undo;
+  }, [ready, state, undo, userId]);
+
+  useEffect(() => {
+    if (!authReady) {
+      return;
+    }
+    if (previousUserRef.current && !userId) {
+      guestFreshRef.current = true;
+      markGuestFresh(AsyncStorage).catch(() => {});
+    }
+    previousUserRef.current = userId;
+  }, [authReady, userId]);
+
+  useEffect(() => {
+    flushImpl.current = async (request) => {
+      if (!userId || flushRef.current || !readyRef.current) {
+        return;
+      }
+      const current = stateRef.current;
+      const queue = queueForSync(serverRef.current, current, episodeLookup, { allowPush: !current.demoMode });
+      if (!hasQueueWork(queue)) {
+        setSyncStatus('saved');
+        return;
+      }
+      if (queue.blocked.length && !Object.keys(queue.media).length && !Object.keys(queue.episodes).length) {
+        setSyncStatus('error');
+        return;
+      }
+      const supabase = trackingClient();
+      if (!supabase) {
+        setSyncStatus('error');
+        return;
+      }
+      flushRef.current = true;
+      setSyncStatus('saving');
+      try {
+        const result = await pushTracking(supabase, userId, queue, stampsRef.current);
+        if (!isCurrentScope(scopeRef.current, request)) {
+          return;
+        }
+        const ackedQueue = { media: {}, episodes: {}, blocked: [] };
+        result.acked.media.forEach((id) => {
+          if (queue.media[id]) {
+            ackedQueue.media[id] = queue.media[id];
+          }
+        });
+        result.acked.episodes.forEach((id) => {
+          if (queue.episodes[id]) {
+            ackedQueue.episodes[id] = queue.episodes[id];
+          }
+        });
+        serverRef.current = applyQueue(serverRef.current, ackedQueue);
+        const stamps = {
+          media: { ...stampsRef.current.media, ...result.stamps.media },
+          episodes: { ...stampsRef.current.episodes, ...result.stamps.episodes },
+        };
+        result.removed.media.forEach((id) => {
+          delete stamps.media[id];
+        });
+        result.removed.episodes.forEach((id) => {
+          delete stamps.episodes[id];
+        });
+        stampsRef.current = stamps;
+        setSyncStatus(result.conflicts.length || queue.blocked.length ? 'error' : 'saved');
+      } catch {
+        if (isCurrentScope(scopeRef.current, request)) {
+          setSyncStatus('error');
+        }
+      } finally {
+        flushRef.current = false;
+        if (isCurrentScope(scopeRef.current, request) && stateRef.current !== current) {
+          flushImpl.current(request);
+        }
+      }
+    };
+  }, [userId]);
+
+  useEffect(() => {
+    if (!appliedKey) {
+      return undefined;
+    }
+    const request = { id: scopeRef.current.id + 1, key: appliedKey };
+    scopeRef.current = request;
     let active = true;
     (async () => {
       try {
-        const stored = await AsyncStorage.getItem(STORAGE_KEY);
-        if (active && stored) {
-          setState(normalize(JSON.parse(stored)));
-        }
-      } catch {
-        if (active) {
-          setState(emptyState());
-        }
-      } finally {
-        if (active) {
+        if (appliedKey === 'guest') {
+          const fresh = guestFreshRef.current || await isGuestFresh(AsyncStorage);
+          guestFreshRef.current = fresh;
+          const guest = fresh ? emptyGuestState() : await readGuestSession(AsyncStorage);
+          if (!active || !isCurrentScope(scopeRef.current, request)) {
+            return;
+          }
+          serverRef.current = guest;
+          stampsRef.current = emptyStamps();
+          setState(guest);
+          setCacheRestored(true);
+          setLoadError(false);
           setReady(true);
+          return;
         }
+        const cache = await readAccountEnvelope(AsyncStorage, userId);
+        const supabase = trackingClient();
+        if (!supabase) {
+          throw new Error('config');
+        }
+        const remoteRows = await pullTracking(supabase);
+        if (!active || !isCurrentScope(scopeRef.current, request) || remoteRows.userId !== userId) {
+          return;
+        }
+        const remote = stateFromRemote(remoteRows.media, remoteRows.episodes);
+        const merged = mergeRemoteAndLocal(remote, cache, episodeLookup);
+        serverRef.current = merged.server;
+        stampsRef.current = merged.stamps;
+        setState(merged.state);
+        setCacheRestored(true);
+        setLoadError(false);
+        setReady(true);
+        rehydrateCatalog(merged.state);
+      } catch {
+        if (!active || !isCurrentScope(scopeRef.current, request)) {
+          return;
+        }
+        if (appliedKey !== 'guest' && userId) {
+          try {
+            const cache = await readAccountEnvelope(AsyncStorage, userId);
+            if (!active || !isCurrentScope(scopeRef.current, request)) {
+              return;
+            }
+            if (cache) {
+              serverRef.current = cache.server;
+              stampsRef.current = cache.stamps;
+              setState(cache.state);
+              setCacheRestored(true);
+              setLoadError(false);
+              setSyncStatus('error');
+              setReady(true);
+              rehydrateCatalog(cache.state);
+              return;
+            }
+          } catch {
+            // The account cache is unreadable. Keep the error screen.
+          }
+        }
+        serverRef.current = emptyState();
+        stampsRef.current = emptyStamps();
+        setState(emptyState());
+        setCacheRestored(false);
+        setLoadError(true);
+        setSyncStatus('error');
+        setReady(true);
       }
     })();
     return () => {
       active = false;
     };
-  }, []);
+  }, [appliedKey, attempt, userId]);
 
   useEffect(() => {
-    if (!ready) {
+    if (!ready || scopeRef.current.key !== appliedKey || (loadError && !cacheRestored)) {
       return;
     }
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state)).catch(() => {});
-  }, [ready, state]);
+    if (appliedKey === 'guest') {
+      if (guestFreshRef.current && !hasTrackingRecords(state) && !state.onboardingComplete) {
+        return;
+      }
+      writeGuestSession(AsyncStorage, state).then((result) => {
+        if (result?.wrote) {
+          guestFreshRef.current = false;
+        }
+      }).catch(() => {});
+      return;
+    }
+    if (!userId || state.demoMode) {
+      return;
+    }
+    const request = scopeRef.current;
+    writeAccountEnvelope(AsyncStorage, userId, {
+      state,
+      server: serverRef.current,
+      stamps: stampsRef.current,
+    }).catch(() => {});
+    flushImpl.current(request);
+  }, [appliedKey, cacheRestored, loadError, ready, state, userId]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (next) => {
+      if (next !== 'active' || !readyRef.current || !userRef.current) {
+        return;
+      }
+      flushImpl.current(scopeRef.current);
+    });
+    return () => subscription.remove();
+  }, []);
 
   const dismissUndo = useCallback(() => {
     updateUndo(null);
@@ -137,7 +364,15 @@ export function TrackingProvider({ children }) {
       return;
     }
     updateUndo(null);
-    setState((prev) => {
+    commit((prev) => {
+      if (current.created) {
+        if (!prev.shows[current.showId]) {
+          return prev;
+        }
+        const shows = { ...prev.shows };
+        delete shows[current.showId];
+        return { ...prev, shows };
+      }
       const entry = prev.shows[current.showId];
       if (!entry) {
         return prev;
@@ -146,14 +381,15 @@ export function TrackingProvider({ children }) {
         ...prev,
         shows: {
           ...prev.shows,
-          [current.showId]: {
-            ...entry,
-            watchedEpisodeIds: (entry.watchedEpisodeIds || []).filter((id) => id !== current.episodeId),
-          },
+          [current.showId]: undoEpisodeChanges(entry, {
+            added: current.added || (current.episodeId ? [current.episodeId] : []),
+            removed: current.removed || [],
+            previousIntent: current.previousIntent,
+          }),
         },
       };
     });
-  }, [updateUndo]);
+  }, [commit, updateUndo]);
 
   const markNextWatched = useCallback((showId) => {
     const show = getShow(showId);
@@ -161,186 +397,161 @@ export function TrackingProvider({ children }) {
       return;
     }
     let marked = null;
-    setState((prev) => {
-      const entry = prev.shows[showId];
-      if (!entry) {
+    commit((prev) => {
+      const result = markNextReleased(show, prev.shows[showId]);
+      if (!result.marked) {
         return prev;
       }
-      const next = getNextEpisode(show, entry);
-      if (!next) {
-        return prev;
-      }
-      marked = next;
-      const watchedEpisodeIds = entry.watchedEpisodeIds || [];
+      marked = result;
       return {
         ...prev,
         shows: {
           ...prev.shows,
-          [showId]: {
-            ...entry,
-            intent: entry.intent === 'plan' ? 'watching' : entry.intent,
-            watchedEpisodeIds: watchedEpisodeIds.includes(next.id)
-              ? watchedEpisodeIds
-              : [...watchedEpisodeIds, next.id],
-          },
+          [showId]: result.entry,
         },
       };
     });
     if (marked) {
       updateUndo({
         showId,
-        episodeId: marked.id,
-        episodeTitle: marked.title || '',
-        episodeTitleKey: marked.titleKey,
+        episodeId: marked.marked.id,
+        added: marked.added,
+        previousIntent: marked.previousIntent,
+        episodeTitle: marked.marked.title || '',
+        episodeTitleKey: marked.marked.titleKey,
       });
     }
-  }, [updateUndo]);
+  }, [commit, updateUndo]);
 
   const toggleEpisode = useCallback((showId, episodeId) => {
     const show = getShow(showId);
-    const episode = show && show.seasons.flatMap((season) => season.episodes).find((item) => item.id === episodeId);
-    if (!show || !episode || !isReleased(episode)) {
+    if (!show) {
       return;
     }
     let marked = null;
-    setState((prev) => {
-      const entry = prev.shows[showId] || showEntry({ intent: 'watching' });
-      const watchedEpisodeIds = entry.watchedEpisodeIds || [];
-      const alreadyWatched = watchedEpisodeIds.includes(episodeId);
-      if (!alreadyWatched) {
-        marked = episode;
+    commit((prev) => {
+      const existing = prev.shows[showId];
+      const result = toggleReleasedEpisode(show, existing, episodeId);
+      if (!result.added.length && !result.removed.length) {
+        return prev;
+      }
+      if (result.marked) {
+        marked = { ...result, created: !existing, previousIntent: existing?.intent || null };
       }
       return {
         ...prev,
         shows: {
           ...prev.shows,
-          [showId]: {
-            ...entry,
-            intent: entry.intent === 'plan' ? 'watching' : entry.intent,
-            watchedEpisodeIds: alreadyWatched
-              ? watchedEpisodeIds.filter((id) => id !== episodeId)
-              : [...watchedEpisodeIds, episodeId],
-          },
+          [showId]: result.entry,
         },
       };
     });
     if (marked) {
       updateUndo({
         showId,
-        episodeId: marked.id,
-        episodeTitle: marked.title || '',
-        episodeTitleKey: marked.titleKey,
+        episodeId: marked.marked.id,
+        added: marked.added,
+        removed: marked.removed,
+        previousIntent: marked.previousIntent,
+        created: marked.created,
+        episodeTitle: marked.marked.title || '',
+        episodeTitleKey: marked.marked.titleKey,
       });
     } else {
       updateUndo(null);
     }
-  }, [updateUndo]);
+  }, [commit, updateUndo]);
+
+  const setSeasonWatched = useCallback((showId, seasonNumber, watched = true) => {
+    const show = getShow(showId);
+    if (!show || !Number.isInteger(seasonNumber)) {
+      return;
+    }
+    let result = null;
+    commit((prev) => {
+      const existing = prev.shows[showId];
+      result = watched
+        ? markSeasonWatched(show, existing, seasonNumber)
+        : markSeasonUnwatched(show, existing, seasonNumber);
+      if (!result.added.length && !result.removed.length) {
+        result = null;
+        return prev;
+      }
+      return {
+        ...prev,
+        shows: {
+          ...prev.shows,
+          [showId]: result.entry,
+        },
+      };
+    });
+    if (result) {
+      updateUndo({
+        kind: 'season',
+        showId,
+        seasonNumber,
+        added: result.added,
+        removed: result.removed,
+        previousIntent: result.previousIntent,
+        created: result.created,
+        episodeTitle: '',
+      });
+    } else {
+      updateUndo(null);
+    }
+  }, [commit, updateUndo]);
 
   const setShowIntent = useCallback((showId, intent) => {
     if (!getShow(showId)) {
       return;
     }
     updateUndo(null);
-    setState((prev) => {
-      const existing = prev.shows[showId];
-      const carried = existing?.rating ?? prev.showRatings?.[showId] ?? null;
-      const entry = existing || showEntry({ rating: carried });
-      const showRatings = { ...(prev.showRatings || {}) };
-      delete showRatings[showId];
-      return {
-        ...prev,
-        showRatings,
-        shows: {
-          ...prev.shows,
-          [showId]: { ...entry, intent, rating: entry.rating ?? carried },
-        },
-      };
-    });
-  }, [updateUndo]);
+    commit((prev) => applyShowIntent(prev, showId, intent));
+  }, [commit, updateUndo]);
 
   const removeShow = useCallback((showId) => {
     updateUndo(null);
-    setState((prev) => removeTrackedShow(prev, showId));
-  }, [updateUndo]);
+    commit((prev) => removeTrackedShow(prev, showId));
+  }, [commit, updateUndo]);
 
   const toggleShowWatchlist = useCallback((showId) => {
     if (!getShow(showId)) {
       return;
     }
     updateUndo(null);
-    setState((prev) => applyShowWatchlistToggle(prev, showId));
-  }, [updateUndo]);
+    commit((prev) => applyShowWatchlistToggle(prev, showId));
+  }, [commit, updateUndo]);
 
   const toggleMovieWatchlist = useCallback((movieId) => {
     if (!getMovie(movieId)) {
       return;
     }
-    setState((prev) => applyMovieWatchlistToggle(prev, movieId));
-  }, []);
+    commit((prev) => applyMovieWatchlistToggle(prev, movieId));
+  }, [commit]);
 
   const setShowRating = useCallback((showId, rating) => {
     if (!getShow(showId)) {
       return;
     }
-    setState((prev) => {
-      const value = clampRating(rating);
-      const entry = prev.shows[showId];
-      if (entry) {
-        const showRatings = { ...(prev.showRatings || {}) };
-        delete showRatings[showId];
-        return {
-          ...prev,
-          showRatings,
-          shows: {
-            ...prev.shows,
-            [showId]: { ...entry, rating: value },
-          },
-        };
-      }
-      const showRatings = { ...(prev.showRatings || {}) };
-      if (value == null) {
-        delete showRatings[showId];
-      } else {
-        showRatings[showId] = value;
-      }
-      return { ...prev, showRatings };
-    });
-  }, []);
+    commit((prev) => applyShowRating(prev, showId, rating));
+  }, [commit]);
 
   const setEpisodeRating = useCallback((episodeId, rating) => {
     if (!episodeId) {
       return;
     }
-    setState((prev) => {
-      const episodeRatings = { ...(prev.episodeRatings || {}) };
-      const value = clampRating(rating);
-      if (value == null) {
-        delete episodeRatings[episodeId];
-      } else {
-        episodeRatings[episodeId] = value;
-      }
-      return { ...prev, episodeRatings };
-    });
-  }, []);
+    commit((prev) => applyEpisodeRating(prev, episodeId, rating));
+  }, [commit]);
 
   const saveMovie = useCallback((movieId, changes) => {
     if (!getMovie(movieId)) {
       return;
     }
-    setState((prev) => {
-      const current = prev.movies[movieId] || movieEntry({});
-      return {
-        ...prev,
-        movies: {
-          ...prev.movies,
-          [movieId]: movieEntry({ ...current, ...changes }),
-        },
-      };
-    });
-  }, []);
+    commit((prev) => applyMovieChanges(prev, movieId, changes));
+  }, [commit]);
 
   const removeMovie = useCallback((movieId) => {
-    setState((prev) => {
+    commit((prev) => {
       if (!prev.movies[movieId]) {
         return prev;
       }
@@ -348,40 +559,18 @@ export function TrackingProvider({ children }) {
       delete movies[movieId];
       return { ...prev, movies };
     });
-  }, []);
+  }, [commit]);
 
   const setMovieRating = useCallback((movieId, rating) => {
     if (!getMovie(movieId)) {
       return;
     }
-    setState((prev) => {
-      const current = prev.movies[movieId];
-      const value = clampRating(rating);
-      if (!current && value == null) {
-        return prev;
-      }
-      if (current && value == null && !current.saved && !current.watched) {
-        const movies = { ...prev.movies };
-        delete movies[movieId];
-        return { ...prev, movies };
-      }
-      return {
-        ...prev,
-        movies: {
-          ...prev.movies,
-          [movieId]: movieEntry({
-            saved: current?.saved ?? false,
-            watched: current?.watched ?? false,
-            rating: value,
-          }),
-        },
-      };
-    });
-  }, []);
+    commit((prev) => applyMovieRating(prev, movieId, rating));
+  }, [commit]);
 
   const completeOnboarding = useCallback(({ shows: selectedShows = [], movies: selectedMovies = [] }) => {
     updateUndo(null);
-    setState((prev) => {
+    commit((prev) => {
       const shows = { ...prev.shows };
       const showRatings = { ...(prev.showRatings || {}) };
       selectedShows.forEach((selection) => {
@@ -412,11 +601,11 @@ export function TrackingProvider({ children }) {
           movies[movieId] = existing;
           return;
         }
-        movies[movieId] = movieEntry({
+        movies[movieId] = {
           saved: true,
           watched: false,
           rating: existing?.rating ?? null,
-        });
+        };
       });
 
       return {
@@ -428,11 +617,11 @@ export function TrackingProvider({ children }) {
         showRatings,
       };
     });
-  }, [updateUndo]);
+  }, [commit, updateUndo]);
 
   const loadDemo = useCallback(() => {
     updateUndo(null);
-    setState({
+    commit({
       onboardingComplete: true,
       demoMode: true,
       shows: demoTracking.shows,
@@ -440,11 +629,11 @@ export function TrackingProvider({ children }) {
       showRatings: {},
       episodeRatings: demoTracking.episodeRatings || {},
     });
-  }, [updateUndo]);
+  }, [commit, updateUndo]);
 
   const clearLocalData = useCallback(() => {
     updateUndo(null);
-    setState({
+    commit({
       onboardingComplete: true,
       demoMode: false,
       shows: {},
@@ -452,15 +641,30 @@ export function TrackingProvider({ children }) {
       showRatings: {},
       episodeRatings: {},
     });
-  }, [updateUndo]);
+  }, [commit, updateUndo]);
 
   const restartOnboarding = useCallback(() => {
     updateUndo(null);
-    setState((prev) => ({ ...prev, onboardingComplete: false }));
-  }, [updateUndo]);
+    commit((prev) => ({ ...prev, onboardingComplete: false }));
+  }, [commit, updateUndo]);
+
+  const retryLoad = useCallback(() => {
+    setReady(false);
+    setLoadError(false);
+    setAttempt((current) => current + 1);
+  }, []);
+
+  const retrySync = useCallback(() => {
+    flushImpl.current(scopeRef.current);
+  }, []);
 
   const value = useMemo(() => ({
     ready,
+    loadError,
+    cacheRestored,
+    syncStatus,
+    retryLoad,
+    retrySync,
     onboardingComplete: state.onboardingComplete,
     demoMode: state.demoMode,
     shows: state.shows,
@@ -472,6 +676,7 @@ export function TrackingProvider({ children }) {
     undoLast,
     markNextWatched,
     toggleEpisode,
+    setSeasonWatched,
     setShowIntent,
     removeShow,
     setShowRating,
@@ -487,12 +692,18 @@ export function TrackingProvider({ children }) {
     restartOnboarding,
   }), [
     ready,
+    loadError,
+    cacheRestored,
+    syncStatus,
+    retryLoad,
+    retrySync,
     state,
     undo,
     dismissUndo,
     undoLast,
     markNextWatched,
     toggleEpisode,
+    setSeasonWatched,
     setShowIntent,
     removeShow,
     setShowRating,

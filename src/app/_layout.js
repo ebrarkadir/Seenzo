@@ -1,17 +1,20 @@
 import { useEffect, useState } from 'react';
-import { View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { I18nextProvider, useTranslation } from 'react-i18next';
 
 import i18n from '../i18n';
 import { loadMediaLibrary } from '../data/mediaLibrary';
-import { colors } from '../theme';
+import { colors, spacing, typography } from '../theme';
+import { AuthProvider, useAuth } from '../auth/AuthContext';
 import { TrackingProvider, useTracking } from '../tracking/TrackingContext';
+import PrimaryButton from '../components/ui/PrimaryButton';
 
 function RootStack() {
   const { t } = useTranslation();
-  const { ready, onboardingComplete } = useTracking();
+  const { ready, onboardingComplete, loadError, cacheRestored, syncStatus, retryLoad, retrySync } = useTracking();
+  const { signOut } = useAuth();
   const [catalogReady, setCatalogReady] = useState(false);
   const segments = useSegments();
   const router = useRouter();
@@ -21,19 +24,38 @@ function RootStack() {
   }, []);
 
   useEffect(() => {
-    if (!ready || onboardingComplete) {
+    if (!ready || onboardingComplete || (loadError && !cacheRestored)) {
       return;
     }
-    if (segments[0] !== 'onboarding') {
+    const route = segments[0];
+    if (route !== 'onboarding' && route !== 'sign-in' && route !== 'sign-up') {
       router.replace('/onboarding');
     }
-  }, [onboardingComplete, ready, router, segments]);
+  }, [cacheRestored, loadError, onboardingComplete, ready, router, segments]);
 
   if (!ready || !catalogReady) {
     return <View style={{ flex: 1, backgroundColor: colors.background }} />;
   }
 
+  if (loadError && !cacheRestored) {
+    return (
+      <View style={styles.blocked}>
+        <Text style={styles.blockedTitle}>{t('sync.loadError')}</Text>
+        <PrimaryButton label={t('sync.loadRetry')} onPress={retryLoad} />
+        <PrimaryButton label={t('profile.logout')} variant="secondary" onPress={() => signOut()} />
+      </View>
+    );
+  }
+
   return (
+    <View style={styles.frame}>
+      {syncStatus === 'error' ? (
+        <View style={styles.syncError}>
+          <Text style={styles.syncText}>{t('sync.error')}</Text>
+          <PrimaryButton label={t('sync.retry')} onPress={retrySync} />
+        </View>
+      ) : null}
+      <View style={styles.frame}>
     <Stack
       screenOptions={{
         headerStyle: { backgroundColor: colors.background },
@@ -53,17 +75,51 @@ function RootStack() {
       <Stack.Screen name="trakt-test" options={{ title: t('trakt.title') }} />
       <Stack.Screen name="show/[id]" options={{ title: '' }} />
       <Stack.Screen name="movie/[id]" options={{ title: '' }} />
+      <Stack.Screen name="sign-in" options={{ title: t('auth.signInTitle') }} />
+      <Stack.Screen name="sign-up" options={{ title: t('auth.signUpTitle') }} />
     </Stack>
+      </View>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  frame: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  blocked: {
+    flex: 1,
+    backgroundColor: colors.background,
+    justifyContent: 'center',
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  blockedTitle: {
+    ...typography.body,
+    color: colors.text,
+  },
+  syncError: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    gap: spacing.sm,
+    backgroundColor: colors.background,
+  },
+  syncText: {
+    ...typography.caption,
+    color: colors.status.dropped,
+  },
+});
 
 export default function RootLayout() {
   return (
     <I18nextProvider i18n={i18n}>
-      <TrackingProvider>
-        <StatusBar style="light" />
-        <RootStack />
-      </TrackingProvider>
+      <AuthProvider>
+        <TrackingProvider>
+          <StatusBar style="light" />
+          <RootStack />
+        </TrackingProvider>
+      </AuthProvider>
     </I18nextProvider>
   );
 }

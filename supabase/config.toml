@@ -1,0 +1,5 @@
+# Minimal Supabase config for Seenzo Edge Functions.
+# Do not deploy automatically from the agent — use the manual steps in the task report.
+
+[functions.performance-vote]
+verify_jwt = true
