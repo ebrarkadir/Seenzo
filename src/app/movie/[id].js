@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useNavigation } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 
+import CastCrewSection from '../../components/people/CastCrewSection';
+import ShowOverflowMenu from '../../components/tracking/ShowOverflowMenu';
 import PosterThumb from '../../components/ui/PosterThumb';
-import PrimaryButton from '../../components/ui/PrimaryButton';
+import RateChip from '../../components/ui/RateChip';
 import RatingSheet from '../../components/ui/RatingSheet';
 import { mediaSynopsis, mediaTitle } from '../../data/labels';
 import { rememberMovie, resolveMovie, useMediaRevision } from '../../data/mediaLibrary';
@@ -12,6 +15,13 @@ import { hydrateMovie } from '../../services/trakt/catalog';
 import { parseTraktMovieKey } from '../../services/trakt/normalize';
 import { colors, radii, spacing, typography } from '../../theme';
 import { useTracking } from '../../tracking/TrackingContext';
+
+function formatCommunityRating(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null;
+  }
+  return Number(value.toFixed(1));
+}
 
 export default function MovieDetailScreen() {
   const { id } = useLocalSearchParams();
@@ -23,10 +33,11 @@ export default function MovieDetailScreen() {
   const [remoteError, setRemoteError] = useState(null);
   const { t } = useTranslation();
   const navigation = useNavigation();
-  const { movies, saveMovie, toggleMovieWatchlist, setMovieRating } = useTracking();
+  const { movies, saveMovie, toggleMovieWatchlist, setMovieRating, removeMovie } = useTracking();
   const entry = movies[movieId];
   const movieRating = entry?.rating ?? null;
-  const [open, setOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [ratingOpen, setRatingOpen] = useState(false);
   const [draft, setDraft] = useState(null);
 
   useEffect(() => {
@@ -88,82 +99,150 @@ export default function MovieDetailScreen() {
 
   const saved = Boolean(entry?.saved);
   const watched = Boolean(entry?.watched);
+  const posterStatus = watched ? 'completed' : saved ? 'plan' : null;
+  const communityRating = formatCommunityRating(movie.communityRating);
+  const genreLine = movie.genreKey
+    ? `${movie.year || t('trakt.unavailable')} · ${t(movie.genreKey)}`
+    : [movie.year, movie.genres?.join(', ')].filter(Boolean).join(' · ') || t('trakt.unavailable');
+
+  const overflowOptions = [];
+  if (!saved && !watched) {
+    overflowOptions.push({
+      key: 'watchlist-add',
+      label: t('movies.addToWatchlist'),
+      onPress: () => toggleMovieWatchlist(movie.id),
+    });
+  }
+  if (saved && !watched) {
+    overflowOptions.push({
+      key: 'watchlist-remove',
+      label: t('movies.removeFromWatchlist'),
+      onPress: () => toggleMovieWatchlist(movie.id),
+    });
+  }
+  if (watched) {
+    overflowOptions.push({
+      key: 'unwatched',
+      label: t('movies.markUnwatched'),
+      onPress: () => saveMovie(movie.id, { watched: false, saved: true }),
+    });
+  }
+  if (entry) {
+    overflowOptions.push({
+      key: 'remove',
+      label: t('movies.removeFromList'),
+      destructive: true,
+      onPress: () => {
+        Alert.alert(t('movies.removeTitle'), t('movies.removeMessage'), [
+          { text: t('common.cancel'), style: 'cancel' },
+          { text: t('common.remove'), style: 'destructive', onPress: () => removeMovie(movie.id) },
+        ]);
+      },
+    });
+  }
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <View style={styles.header}>
-        <PosterThumb uri={movie.poster} posterPath={movie.posterPath} width={96} height={144} status={watched ? 'completed' : saved ? 'plan' : null} />
-        <View style={styles.headerCopy}>
-          <Text style={styles.title}>{mediaTitle(t, movie)}</Text>
-          <Text style={styles.meta}>
-            {movie.genreKey
-              ? `${movie.year} · ${t(movie.genreKey)}`
-              : [movie.year, movie.genres?.join(', ')].filter(Boolean).join(' · ') || t('trakt.unavailable')}
-          </Text>
-          {movie.runtime ? <Text style={styles.meta}>{t('common.minutes', { count: movie.runtime })}</Text> : null}
-          {movie.communityRating == null ? null : (
-            <Text style={styles.meta}>{t('trakt.communityRating', { rating: movie.communityRating })}</Text>
-          )}
-          <Text style={styles.meta}>{watched ? t('movies.watched') : saved ? t('movies.toWatch') : t('movies.notSaved')}</Text>
+    <View style={styles.screen}>
+      <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.header}>
+          <PosterThumb
+            uri={movie.poster}
+            posterPath={movie.posterPath}
+            width={96}
+            height={144}
+            status={posterStatus}
+          />
+          <View style={styles.headerCopy}>
+            <Text style={styles.title}>{mediaTitle(t, movie)}</Text>
+            <Text style={styles.meta}>{genreLine}</Text>
+            {movie.runtime ? (
+              <Text style={styles.meta}>{t('common.minutes', { count: movie.runtime })}</Text>
+            ) : null}
+            <Text style={styles.meta}>
+              {communityRating == null
+                ? t('trakt.unavailable')
+                : t('trakt.communityRating', { rating: communityRating })}
+            </Text>
+            <Text style={styles.meta}>
+              {watched ? t('movies.watched') : saved ? t('movies.toWatch') : t('movies.notSaved')}
+            </Text>
+            <View style={styles.headerActions}>
+              {watched ? (
+                <View style={[styles.markChip, styles.markChipDone]}>
+                  <Ionicons name="checkmark-circle" size={16} color={colors.onPrimary} />
+                  <Text style={[styles.markText, styles.markTextDone]}>{t('movies.watched')}</Text>
+                </View>
+              ) : (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t('movies.markWatched')}
+                  onPress={() => saveMovie(movie.id, { watched: true, saved: true })}
+                  hitSlop={6}
+                  style={styles.markChip}
+                >
+                  <Ionicons name="checkmark" size={16} color={colors.primary} />
+                  <Text style={styles.markText}>{t('movies.markWatched')}</Text>
+                </Pressable>
+              )}
+              <RateChip
+                label={movieRating != null ? t('common.ratingValue', { rating: movieRating }) : t('rating.rate')}
+                accessibilityLabel={t('rating.movie')}
+                onPress={() => {
+                  setDraft(movieRating);
+                  setRatingOpen(true);
+                }}
+              />
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t('movies.moreActions')}
+                onPress={() => setMenuOpen(true)}
+                hitSlop={8}
+                style={styles.moreButton}
+              >
+                <Ionicons name="ellipsis-vertical" size={20} color={colors.text} />
+              </Pressable>
+            </View>
+          </View>
         </View>
-      </View>
-      <Text style={styles.body}>{mediaSynopsis(t, movie) || t('trakt.unavailable')}</Text>
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => {
-          setDraft(movieRating);
-          setOpen(true);
-        }}
-        style={styles.rateRow}
-      >
-        <Text style={styles.rateLabel}>{t('rating.movie')}</Text>
-        <Text style={styles.rateValue}>
-          {movieRating ? t('common.ratingValue', { rating: movieRating }) : t('rating.none')}
-        </Text>
-      </Pressable>
-      <View style={styles.actions}>
-        {watched ? (
-          <PrimaryButton
-            label={t('movies.markUnwatched')}
-            onPress={() => saveMovie(movie.id, { watched: false, saved: true })}
-          />
+
+        <Text style={styles.body}>{mediaSynopsis(t, movie) || t('trakt.unavailable')}</Text>
+        {remoteLoading ? <Text style={styles.meta}>{t('trakt.loading')}</Text> : null}
+
+        {traktId ? (
+          <View style={styles.peopleBlock}>
+            <Text style={styles.peopleHeading}>{t('people.showCastCrew')}</Text>
+            <CastCrewSection mode="movie" traktMovieId={traktId} />
+          </View>
         ) : (
-          <PrimaryButton
-            label={t('movies.markWatched')}
-            onPress={() => saveMovie(movie.id, { watched: true, saved: true })}
-          />
+          <Text style={styles.meta}>{t('people.unavailableForDemo')}</Text>
         )}
-        {saved && !watched ? (
-          <PrimaryButton label={t('movies.removeFromWatchlist')} variant="secondary" onPress={() => toggleMovieWatchlist(movie.id)} />
-        ) : null}
-        {!saved && !watched ? (
-          <PrimaryButton
-            label={t('movies.addToWatchlist')}
-            variant="secondary"
-            onPress={() => toggleMovieWatchlist(movie.id)}
-          />
-        ) : null}
-      </View>
+      </ScrollView>
+
+      <ShowOverflowMenu
+        visible={menuOpen}
+        options={overflowOptions}
+        onClose={() => setMenuOpen(false)}
+      />
       <RatingSheet
-        visible={open}
+        visible={ratingOpen}
         title={t('rating.movie')}
         value={draft}
         savedValue={movieRating}
         onChange={setDraft}
-        onClose={() => setOpen(false)}
+        onClose={() => setRatingOpen(false)}
         onSave={() => {
           if (draft == null) {
             return;
           }
           setMovieRating(movie.id, draft);
-          setOpen(false);
+          setRatingOpen(false);
         }}
         onRemove={() => {
           setMovieRating(movie.id, null);
-          setOpen(false);
+          setRatingOpen(false);
         }}
       />
-    </ScrollView>
+    </View>
   );
 }
 
@@ -189,11 +268,50 @@ const styles = StyleSheet.create({
   },
   headerCopy: {
     flex: 1,
+    minWidth: 0,
     gap: spacing.sm,
   },
   title: {
     ...typography.title,
     color: colors.text,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  markChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    minHeight: 36,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radii.full,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceElevated,
+  },
+  markChipDone: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  markText: {
+    ...typography.label,
+    color: colors.textSecondary,
+  },
+  markTextDone: {
+    color: colors.onPrimary,
+  },
+  moreButton: {
+    width: 36,
+    height: 36,
+    borderRadius: radii.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   body: {
     ...typography.body,
@@ -203,29 +321,11 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textSecondary,
   },
-  actions: {
+  peopleBlock: {
     gap: spacing.sm,
   },
-  rateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-    minHeight: 52,
-    paddingHorizontal: spacing.md,
-    borderRadius: radii.md,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  rateLabel: {
-    ...typography.body,
+  peopleHeading: {
+    ...typography.subtitle,
     color: colors.text,
-    fontWeight: '600',
-  },
-  rateValue: {
-    ...typography.body,
-    color: colors.primary,
-    fontWeight: '700',
   },
 });

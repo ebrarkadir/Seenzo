@@ -6,9 +6,9 @@ const inflight = new Map();
 const CACHE_TTL_MS = 30 * 60 * 1000;
 
 const CREW_ORDER = [
-  'created by',
   'directing',
   'writing',
+  'created by',
   'production',
   'camera',
   'editing',
@@ -76,6 +76,14 @@ export function normalizePeoplePayload(payload) {
     if (!mapped.length) {
       return;
     }
+    // Keep exact Directors ahead of Assistant/Second Unit roles within directing.
+    if (department === 'directing') {
+      mapped.sort((left, right) => {
+        const leftDirector = (left.jobs || []).some((job) => String(job).toLowerCase().trim() === 'director') ? 0 : 1;
+        const rightDirector = (right.jobs || []).some((job) => String(job).toLowerCase().trim() === 'director') ? 0 : 1;
+        return leftDirector - rightDirector;
+      });
+    }
     crewByDepartment[department] = mapped;
   });
   const departments = Object.keys(crewByDepartment).sort((left, right) => {
@@ -124,6 +132,18 @@ export function fetchShowPeople(traktShowId) {
   return loadPeople(
     `show-people:${id}`,
     `/shows/${encodeURIComponent(id)}/people`,
+    { extended: 'full' }
+  );
+}
+
+export function fetchMoviePeople(traktMovieId) {
+  const id = String(traktMovieId || '').trim();
+  if (!id) {
+    return Promise.reject(new Error('invalid'));
+  }
+  return loadPeople(
+    `movie-people:${id}`,
+    `/movies/${encodeURIComponent(id)}/people`,
     { extended: 'full' }
   );
 }

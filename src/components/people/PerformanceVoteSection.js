@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { router } from 'expo-router';
@@ -40,8 +40,10 @@ function PerformanceVoteBody({
   const [stats, setStats] = useState(emptyVoteStats());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [pendingPersonId, setPendingPersonId] = useState(null);
   const [error, setError] = useState(null);
   const [setupUnavailable, setSetupUnavailable] = useState(false);
+  const requestSeq = useRef(0);
 
   useEffect(() => {
     if (!ready) {
@@ -73,9 +75,21 @@ function PerformanceVoteBody({
     };
   }, [episodeNumber, ready, seasonNumber, traktShowId]);
 
-  const ranked = useMemo(
+  const confirmedRanked = useMemo(
     () => rankPerformanceVotes(candidates, setupUnavailable ? emptyVoteStats() : stats),
     [candidates, setupUnavailable, stats]
+  );
+
+  const ranked = useMemo(
+    () => confirmedRanked.map((person) => ({
+      ...person,
+      pendingSelected: pendingPersonId != null && pendingPersonId === person.personId,
+      confirmedSelected: person.selected,
+      selected: pendingPersonId != null
+        ? pendingPersonId === person.personId
+        : person.selected,
+    })),
+    [confirmedRanked, pendingPersonId]
   );
 
   const vote = async (personId) => {
@@ -92,11 +106,19 @@ function PerformanceVoteBody({
     if (saving) {
       return;
     }
+
+    const clearing = stats.myPersonId === personId;
+    const nextPending = clearing ? null : personId;
+    const seq = requestSeq.current + 1;
+    requestSeq.current = seq;
+    const previousStats = stats;
+
+    setPendingPersonId(nextPending);
     setSaving(true);
     setError(null);
+
     try {
-      const selected = stats.myPersonId === personId;
-      const next = selected
+      const next = clearing
         ? await clearPerformanceVote({
           showTraktId: traktShowId,
           seasonNumber,
@@ -108,19 +130,28 @@ function PerformanceVoteBody({
           episodeNumber,
           personTraktId: personId,
         });
+      if (requestSeq.current !== seq) {
+        return;
+      }
       setStats(next);
+      setPendingPersonId(null);
       setSetupUnavailable(false);
     } catch (requestError) {
+      if (requestSeq.current !== seq) {
+        return;
+      }
+      setPendingPersonId(null);
+      setStats(previousStats);
       if (isVotesSetupUnavailable(requestError)) {
         setSetupUnavailable(true);
         setError(null);
-      } else if (requestError?.code === 'episode_not_watched') {
-        setError(requestError);
       } else {
         setError(requestError);
       }
     } finally {
-      setSaving(false);
+      if (requestSeq.current === seq) {
+        setSaving(false);
+      }
     }
   };
 
@@ -146,6 +177,7 @@ function PerformanceVoteBody({
       ) : null}
 
       {loading ? <Text style={styles.meta}>{t('people.votesLoading')}</Text> : null}
+      {saving ? <Text style={styles.banner}>{t('people.voteSaving')}</Text> : null}
 
       {error ? (
         <View style={styles.errorBox}>
@@ -162,7 +194,7 @@ function PerformanceVoteBody({
         </View>
       ) : null}
 
-      {!loading && !error && !setupUnavailable && stats.totalVotes === 0 && candidates.length ? (
+      {!loading && !error && !setupUnavailable && !saving && stats.totalVotes === 0 && candidates.length ? (
         <Text style={styles.meta}>{t('people.beFirstToVote')}</Text>
       ) : null}
 
@@ -187,7 +219,11 @@ function PerformanceVoteBody({
                   }}
                   disabled={saving || setupUnavailable || (!!session && !watched)}
                   onPress={() => vote(person.personId)}
-                  style={[styles.card, person.selected && styles.cardSelected]}
+                  style={[
+                    styles.card,
+                    person.selected && styles.cardSelected,
+                    person.pendingSelected && styles.cardPending,
+                  ]}
                 >
                   <PersonAvatar headshotPath={person.headshotPath} size={64} />
                   <Text style={styles.name} numberOfLines={2}>{person.name}</Text>
@@ -202,8 +238,11 @@ function PerformanceVoteBody({
                       {t('people.voteStats', { percent: person.percent, count: person.voteCount })}
                     </Text>
                   ) : null}
-                  {person.selected ? (
+                  {person.confirmedSelected && !saving ? (
                     <Text style={styles.selectedLabel}>{t('people.yourVote')}</Text>
+                  ) : null}
+                  {person.pendingSelected ? (
+                    <Text style={styles.selectedLabel}>{t('people.voteSaving')}</Text>
                   ) : null}
                 </Pressable>
               );
@@ -228,11 +267,11 @@ function PerformanceVoteBody({
             </View>
           ) : null}
 
-          {session && watched && stats.myPersonId && !setupUnavailable ? (
+          {session && watched && (pendingPersonId != null || stats.myPersonId) && !setupUnavailable ? (
             <Pressable
               accessibilityRole="button"
               disabled={saving}
-              onPress={() => vote(stats.myPersonId)}
+              onPress={() => vote(pendingPersonId != null ? pendingPersonId : stats.myPersonId)}
             >
               <Text style={styles.link}>{t('people.removeVote')}</Text>
             </Pressable>
@@ -278,6 +317,9 @@ const styles = StyleSheet.create({
   },
   cardSelected: {
     borderColor: colors.primary,
+  },
+  cardPending: {
+    opacity: 0.85,
   },
   name: {
     ...typography.label,

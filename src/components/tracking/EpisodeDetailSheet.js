@@ -1,4 +1,5 @@
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
@@ -9,6 +10,7 @@ import { episodeCode, isReleased } from '../../tracking/status';
 import EpisodeActorsBlock from '../people/EpisodeActorsBlock';
 import PosterThumb from '../ui/PosterThumb';
 import PrimaryButton from '../ui/PrimaryButton';
+import RateChip from '../ui/RateChip';
 
 export default function EpisodeDetailSheet({
   visible,
@@ -34,6 +36,8 @@ export default function EpisodeDetailSheet({
   const synopsis = mediaSynopsis(t, episode);
   const posterPath = episode.posterPath || show?.posterPath;
   const posterUri = episode.poster || show?.poster;
+  const canRate = released && watched;
+  const rateLabel = rating != null ? t('common.ratingValue', { rating }) : t('rating.rate');
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -45,6 +49,18 @@ export default function EpisodeDetailSheet({
           onPress={onClose}
         />
         <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
+          <View style={styles.sheetHeader}>
+            <View style={styles.sheetHeaderSpacer} />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('tv.closeEpisode')}
+              onPress={onClose}
+              hitSlop={8}
+              style={styles.closeButton}
+            >
+              <Ionicons name="close" size={20} color={colors.text} />
+            </Pressable>
+          </View>
           <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
             <View style={styles.header}>
               <PosterThumb uri={posterUri} posterPath={posterPath} width={84} height={126} />
@@ -57,9 +73,20 @@ export default function EpisodeDetailSheet({
                     typeof episode.runtime === 'number' ? t('common.minutes', { count: episode.runtime }) : null,
                   ].filter(Boolean).join(' · ') || t('trakt.unavailable')}
                 </Text>
-                <Text style={styles.meta}>
-                  {rating != null ? t('common.ratingValue', { rating }) : t('rating.none')}
-                </Text>
+                <View style={styles.rateRow}>
+                  <RateChip
+                    label={rateLabel}
+                    accessibilityLabel={t('rating.episode')}
+                    disabled={!canRate}
+                    onPress={canRate ? onRate : () => {}}
+                  />
+                  {rating == null ? (
+                    <Text style={styles.meta}>{t('rating.none')}</Text>
+                  ) : null}
+                </View>
+                {!canRate && released ? (
+                  <Text style={styles.meta}>{t('rating.watchToRate')}</Text>
+                ) : null}
               </View>
             </View>
             <Text style={styles.section}>{t('trakt.overview')}</Text>
@@ -76,11 +103,6 @@ export default function EpisodeDetailSheet({
                   : t('upcoming.tba')}
               </Text>
             )}
-            <PrimaryButton
-              label={rating != null ? t('common.ratingValue', { rating }) : t('rating.episode')}
-              variant="secondary"
-              onPress={onRate}
-            />
             {traktShowId ? (
               <EpisodeActorsBlock
                 traktShowId={traktShowId}
@@ -91,9 +113,6 @@ export default function EpisodeDetailSheet({
             ) : (
               <Text style={styles.meta}>{t('people.unavailableForDemo')}</Text>
             )}
-            <Pressable accessibilityRole="button" onPress={onClose} style={styles.close}>
-              <Text style={styles.closeText}>{t('tv.closeEpisode')}</Text>
-            </Pressable>
           </ScrollView>
         </View>
       </View>
@@ -123,8 +142,29 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  sheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingTop: spacing.sm,
+    paddingHorizontal: spacing.sm,
+  },
+  sheetHeaderSpacer: {
+    flex: 1,
+  },
+  closeButton: {
+    width: 36,
+    height: 36,
+    borderRadius: radii.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
   content: {
-    padding: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
     gap: spacing.sm,
   },
   header: {
@@ -133,6 +173,7 @@ const styles = StyleSheet.create({
   },
   headerCopy: {
     flex: 1,
+    minWidth: 0,
     gap: 6,
   },
   code: {
@@ -142,6 +183,12 @@ const styles = StyleSheet.create({
   title: {
     ...typography.subtitle,
     color: colors.text,
+  },
+  rateRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   section: {
     ...typography.label,
@@ -154,14 +201,6 @@ const styles = StyleSheet.create({
   },
   meta: {
     ...typography.caption,
-    color: colors.textSecondary,
-  },
-  close: {
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-  },
-  closeText: {
-    ...typography.label,
     color: colors.textSecondary,
   },
 });

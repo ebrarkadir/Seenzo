@@ -174,7 +174,20 @@ export function applyShowRating(prev, showId, rating) {
   return { ...prev, showRatings };
 }
 
+export function isEpisodeWatched(state, episodeId) {
+  if (!episodeId || !state) {
+    return false;
+  }
+  if (Object.values(state.shows || {}).some((entry) => (entry.watchedEpisodeIds || []).includes(episodeId))) {
+    return true;
+  }
+  return Boolean(state.keptEpisodes?.[episodeId]?.watched);
+}
+
 export function applyEpisodeRating(prev, episodeId, rating) {
+  if (!episodeId || !isEpisodeWatched(prev, episodeId)) {
+    return prev;
+  }
   const episodeRatings = { ...(prev.episodeRatings || {}) };
   const value = clampRating(rating);
   if (value == null) {

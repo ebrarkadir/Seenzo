@@ -6,22 +6,35 @@ import { useTranslation } from 'react-i18next';
 import PosterGrid from '../../components/media/PosterGrid';
 import { ShowPoster } from '../../components/media/LibraryTiles';
 import EmptyState from '../../components/ui/EmptyState';
+import RatingSheet from '../../components/ui/RatingSheet';
 import SegmentedControl from '../../components/ui/SegmentedControl';
+import EpisodeDetailSheet from '../../components/tracking/EpisodeDetailSheet';
 import ShowCard from '../../components/tracking/ShowCard';
 import UpcomingRow from '../../components/tracking/UpcomingRow';
 import UndoBar from '../../components/tracking/UndoBar';
-import { mediaTitle } from '../../data/labels';
+import { episodeTitle, mediaTitle } from '../../data/labels';
 import { resolveShow, useMediaRevision } from '../../data/mediaLibrary';
 import { colors, spacing, typography } from '../../theme';
 import { useTracking } from '../../tracking/TrackingContext';
 import { useUndoTimer } from '../../tracking/useUndoTimer';
-import { deriveShowStatus, upcomingForShows } from '../../tracking/status';
+import { deriveShowStatus, episodeCode, listEpisodes, upcomingForShows } from '../../tracking/status';
 
 export default function TvShowsScreen() {
   const { t } = useTranslation();
-  const { shows, undo, markNextWatched, removeShow } = useTracking();
+  const {
+    shows,
+    undo,
+    markNextWatched,
+    toggleEpisode,
+    removeShow,
+    setEpisodeRating,
+    episodeRatings,
+  } = useTracking();
   const revision = useMediaRevision();
   const [segment, setSegment] = useState('watching');
+  const [selected, setSelected] = useState(null);
+  const [ratingTarget, setRatingTarget] = useState(null);
+  const [draft, setDraft] = useState(null);
   useUndoTimer();
 
   const tracked = useMemo(() => {
@@ -47,6 +60,33 @@ export default function TvShowsScreen() {
 
   const upcomingAll = useMemo(() => upcomingForShows(tracked), [tracked]);
   const upcoming = upcomingAll.slice(0, 3);
+
+  const selectedShow = selected ? resolveShow(selected.showId) : null;
+  const selectedEntry = selected ? shows[selected.showId] : null;
+  const selectedEpisode = selectedShow && selected?.episodeId
+    ? listEpisodes(selectedShow).find((episode) => episode.id === selected.episodeId) || null
+    : null;
+  const selectedWatched = Boolean(
+    selectedEpisode && selectedEntry?.watchedEpisodeIds?.includes(selectedEpisode.id)
+  );
+
+  const openEpisode = (show, episode) => {
+    if (!show?.id || !episode?.id) {
+      return;
+    }
+    setSelected({ showId: show.id, episodeId: episode.id });
+  };
+
+  const markAndOpenEpisode = (show, episode) => {
+    if (!show?.id || !episode?.id) {
+      return;
+    }
+    // Capture the episode before progress advances to the following next episode.
+    const showId = show.id;
+    const episodeId = episode.id;
+    markNextWatched(showId);
+    setSelected({ showId, episodeId });
+  };
 
   const segmentControl = (
     <SegmentedControl
@@ -108,8 +148,8 @@ export default function TvShowsScreen() {
               show={show}
               entry={entry}
               onPress={() => router.push(`/show/${show.id}`)}
-              primaryLabel={t('tv.markWatched')}
-              onPrimary={() => markNextWatched(show.id)}
+              onOpenEpisode={openEpisode}
+              onMarkEpisodeWatched={markAndOpenEpisode}
             />
           ))
         )}
@@ -128,6 +168,58 @@ export default function TvShowsScreen() {
         ) : null}
       </ScrollView>
       <UndoBar />
+      <EpisodeDetailSheet
+        key={selected ? `${selected.showId}-${selected.episodeId}` : 'closed'}
+        visible={Boolean(selectedEpisode)}
+        show={selectedShow}
+        episode={selectedEpisode}
+        watched={selectedWatched}
+        rating={selectedEpisode ? episodeRatings?.[selectedEpisode.id] ?? null : null}
+        onClose={() => setSelected(null)}
+        onToggleWatched={() => {
+          if (selectedShow && selectedEpisode) {
+            toggleEpisode(selectedShow.id, selectedEpisode.id);
+          }
+        }}
+        onRate={() => {
+          if (!selectedEpisode || !selectedWatched) {
+            return;
+          }
+          setDraft(episodeRatings?.[selectedEpisode.id] ?? null);
+          setRatingTarget({
+            id: selectedEpisode.id,
+            title: `${t('common.episodeCode', episodeCode(selectedEpisode))} · ${episodeTitle(t, selectedEpisode)}`,
+          });
+        }}
+      />
+      <RatingSheet
+        visible={Boolean(ratingTarget)}
+        title={ratingTarget?.title || t('rating.episode')}
+        value={draft}
+        savedValue={ratingTarget ? episodeRatings?.[ratingTarget.id] ?? null : null}
+        onChange={setDraft}
+        onClose={() => setRatingTarget(null)}
+        onSave={() => {
+          if (draft == null || !ratingTarget) {
+            return;
+          }
+          if (!selectedEntry?.watchedEpisodeIds?.includes(ratingTarget.id)) {
+            return;
+          }
+          setEpisodeRating(ratingTarget.id, draft);
+          setRatingTarget(null);
+        }}
+        onRemove={() => {
+          if (!ratingTarget) {
+            return;
+          }
+          if (!selectedEntry?.watchedEpisodeIds?.includes(ratingTarget.id)) {
+            return;
+          }
+          setEpisodeRating(ratingTarget.id, null);
+          setRatingTarget(null);
+        }}
+      />
     </View>
   );
 }

@@ -20,7 +20,8 @@
     "none": "Not rated",
     "save": "Save rating",
     "remove": "Remove rating",
-    "close": "Close"
+    "close": "Close",
+    "watchToRate": "Mark this episode as watched to rate it."
   },
   "people": {
     "showCastCrew": "Cast & Crew",
@@ -62,6 +63,7 @@
     "noVotes": "No votes yet",
     "beFirstToVote": "Be the first to vote",
     "yourVote": "Your vote",
+    "voteSaving": "Saving vote…",
     "removeVote": "Remove my vote",
     "voteStats": "{{percent}}% · {{count}} votes"
   },
@@ -259,12 +261,21 @@
     "markSeasonUnwatched": "Mark Season Unwatched",
     "markAll": "Mark All",
     "markAllDone": "Done",
+    "markShowWatched": "Mark All Watched",
+    "markShowWatchedDone": "All caught up",
+    "markShowWatchedTitle": "Mark all released episodes watched?",
+    "markShowWatchedMessage": "This marks every currently released regular episode as watched. Upcoming episodes and Season 0 specials stay unchanged.",
+    "markShowWatchedConfirm": "Mark all watched",
     "expandSeason": "Expand {{season}}",
     "collapseSeason": "Collapse {{season}}",
     "airedOn": "Aired {{date}}",
     "moreActions": "More actions",
     "dropShow": "Drop show",
     "openEpisode": "Open {{code}}, {{title}}",
+    "markWatchedAndOpen": "Mark {{code}}, {{title}} watched and open details",
+    "episodeLocked": "{{code}} is not released yet",
+    "nextUp": "Next episode",
+    "nextEpisodeLabel": "Next episode · {{code}}",
     "closeEpisode": "Close episode",
     "removeShowTitle": "Remove this show?",
     "removeShowMessage": "This removes the show from your list. Watched episode history stays saved for this account.",
@@ -312,7 +323,10 @@
     "watchedEmptyBody": "Movies you mark as watched will appear here.",
     "openMovie": "Open {{title}}",
     "notSaved": "Not in your list",
-    "notFound": "This movie is not in the catalog."
+    "notFound": "This movie is not in the catalog.",
+    "moreActions": "More movie actions",
+    "removeTitle": "Remove this movie?",
+    "removeMessage": "This removes the movie from your list. Your personal rating is removed with it."
   },
   "watchlist": {
     "add": "Add {{title}} to Watchlist",

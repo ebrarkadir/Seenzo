@@ -1,16 +1,68 @@
-export const KEY_CREW_LIMIT = 4;
+export const KEY_CREW_LIMIT = 6;
 export const DEPT_ACCORDION_THRESHOLD = 12;
 
-function jobMatch(person, needles) {
-  const jobs = (person?.jobs || []).map((job) => String(job).toLowerCase());
-  return needles.some((needle) => jobs.some((job) => job.includes(needle)));
+function normalizedJobs(person) {
+  return (person?.jobs || []).map((job) => String(job || '').toLowerCase().trim()).filter(Boolean);
 }
 
-const PRIORITY_MATCHERS = [
-  (person, department) => department === 'created by' || jobMatch(person, ['creator', 'created by']),
-  (person, department) => department === 'directing' || jobMatch(person, ['director']),
-  (person, department) => department === 'writing' || jobMatch(person, ['writer', 'screenplay', 'teleplay']),
-  (person, department) => jobMatch(person, ['executive producer']),
+function hasExactJob(person, titles) {
+  const jobs = normalizedJobs(person);
+  return titles.some((title) => jobs.includes(title));
+}
+
+function hasWriterJob(person) {
+  if (hasExactJob(person, ['writer', 'screenplay', 'teleplay'])) {
+    return true;
+  }
+  return normalizedJobs(person).some((job) => {
+    if (job === 'novel' || job.includes('novel')) {
+      return false;
+    }
+    return job.includes('writer');
+  });
+}
+
+function hasProducerJob(person) {
+  return hasExactJob(person, [
+    'executive producer',
+    'co-executive producer',
+    'producer',
+    'co-producer',
+    'associate producer',
+  ]);
+}
+
+function isDirector(person) {
+  // Exact "Director" only — never Assistant Director / Second Unit Director, etc.
+  return hasExactJob(person, ['director']);
+}
+
+function isCreator(person, department) {
+  return department === 'created by' || hasExactJob(person, ['creator', 'created by']);
+}
+
+/** Priority tiers for collapsed crew preview. Director first when real directing credits exist. */
+export const CREW_PRIORITY_TIERS = [
+  {
+    key: 'director',
+    takeAll: true,
+    match: ({ person }) => isDirector(person),
+  },
+  {
+    key: 'writer',
+    takeAll: false,
+    match: ({ person }) => hasWriterJob(person),
+  },
+  {
+    key: 'creator',
+    takeAll: false,
+    match: ({ person, department }) => isCreator(person, department),
+  },
+  {
+    key: 'producer',
+    takeAll: false,
+    match: ({ person }) => hasProducerJob(person),
+  },
 ];
 
 export function flattenCrewEntries(people) {
@@ -34,30 +86,78 @@ export function pickKeyCrewMembers(people, limit = KEY_CREW_LIMIT) {
   const selected = [];
   const seen = new Set();
 
-  PRIORITY_MATCHERS.forEach((matcher) => {
-    if (selected.length >= limit) {
+  const push = (entry) => {
+    if (!entry?.person?.personId) {
+      return false;
+    }
+    if (seen.has(entry.person.personId)) {
+      // Same person can hold Director + Writer (etc.); merge jobs for display.
+      const existing = selected.find((item) => item.person.personId === entry.person.personId);
+      if (existing) {
+        const jobs = [...(existing.person.jobs || [])];
+        (entry.person.jobs || []).forEach((job) => {
+          if (!jobs.includes(job)) {
+            jobs.push(job);
+          }
+        });
+        existing.person = { ...existing.person, jobs };
+      }
+      return false;
+    }
+    seen.add(entry.person.personId);
+    selected.push({
+      department: entry.department,
+      person: {
+        ...entry.person,
+        jobs: [...(entry.person.jobs || [])],
+      },
+    });
+    return true;
+  };
+
+  CREW_PRIORITY_TIERS.forEach((tier) => {
+    if (!tier.takeAll && selected.length >= limit) {
       return;
     }
-    const match = entries.find(({ department, person }) => {
-      if (seen.has(person.personId)) {
-        return false;
+    entries.forEach((entry) => {
+      if (!tier.takeAll && selected.length >= limit) {
+        return;
       }
-      return matcher(person, department);
+      if (!tier.match(entry)) {
+        return;
+      }
+      push(entry);
     });
-    if (match) {
-      seen.add(match.person.personId);
-      selected.push(match);
-    }
   });
 
   if (selected.length < limit) {
-    entries.forEach((entry) => {
-      if (selected.length >= limit || seen.has(entry.person.personId)) {
-        return;
+    // Fill remaining slots without promoting Assistant/Second Unit directors.
+    // Prefer leftover writing / creator / production credits over other departments.
+    const fillOrder = ['writing', 'created by', 'production'];
+    const remaining = entries.filter((entry) => {
+      if (seen.has(entry.person.personId)) {
+        return false;
       }
-      seen.add(entry.person.personId);
-      selected.push(entry);
+      if (entry.department === 'directing' && !isDirector(entry.person)) {
+        return false;
+      }
+      return true;
     });
+    remaining
+      .slice()
+      .sort((left, right) => {
+        const leftIndex = fillOrder.indexOf(left.department);
+        const rightIndex = fillOrder.indexOf(right.department);
+        const leftRank = leftIndex === -1 ? fillOrder.length : leftIndex;
+        const rightRank = rightIndex === -1 ? fillOrder.length : rightIndex;
+        return leftRank - rightRank;
+      })
+      .forEach((entry) => {
+        if (selected.length >= limit) {
+          return;
+        }
+        push(entry);
+      });
   }
 
   return selected;

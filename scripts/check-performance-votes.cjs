@@ -116,6 +116,19 @@ expect('edge checks watched episode_entries', edge.includes("eq('watched', true)
 expect('edge validates trakt episode people', edge.includes('actor_not_in_episode'), true);
 expect('edge rejects unauthenticated', edge.includes("error: 'unauthenticated'"), true);
 expect('edge rejects unwatched', edge.includes("error: 'episode_not_watched'"), true);
+expect('edge caches trakt actor ids', edge.includes('actorIdCache'), true);
+expect('edge validates watched and trakt in parallel', edge.includes('Promise.all'), true);
+expect('edge skips redundant mine lookup', edge.includes('myPersonId = parsed.personTraktId'), true);
+expect('edge uses guest_stars without full artwork', edge.includes('extended=guest_stars') && !edge.includes('extended=full,guest_stars'), true);
+
+const voteUi = fs.readFileSync(
+  path.join(__dirname, '..', 'src/components/people/PerformanceVoteSection.js'),
+  'utf8'
+);
+expect('vote ui uses optimistic pending selection', voteUi.includes('pendingPersonId'), true);
+expect('vote ui rolls back on failure', voteUi.includes('setStats(previousStats)'), true);
+expect('vote ui ignores stale responses', voteUi.includes('requestSeq'), true);
+expect('vote ui shows saving indicator', voteUi.includes('people.voteSaving'), true);
 
 const client = fs.readFileSync(
   path.join(__dirname, '..', 'src/services/supabase/performanceVotes.js'),

@@ -124,6 +124,24 @@ export function markSeasonWatched(show, entry, seasonNumber, today) {
   };
 }
 
+/** Mark every released regular episode watched. Season 0 specials are excluded. */
+export function markShowWatched(show, entry, today) {
+  const base = entry || { intent: 'watching', watchedEpisodeIds: [], rating: null };
+  const released = releasedEpisodes(show, today);
+  const watched = new Set(base.watchedEpisodeIds || []);
+  const added = released.map((episode) => episode.id).filter((id) => !watched.has(id));
+  if (!added.length) {
+    return { entry: base, added: [], removed: [], previousIntent: base.intent, created: !entry };
+  }
+  return {
+    previousIntent: base.intent,
+    created: !entry,
+    added,
+    removed: [],
+    entry: withIntent(base, uniqueIds([...(base.watchedEpisodeIds || []), ...added])),
+  };
+}
+
 export function markSeasonUnwatched(show, entry, seasonNumber, today) {
   if (!entry) {
     return { entry, added: [], removed: [], previousIntent: null, created: false };

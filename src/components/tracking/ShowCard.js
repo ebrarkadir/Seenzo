@@ -11,6 +11,7 @@ import {
   episodeCode,
   getNextEpisode,
   getProgress,
+  isReleased,
   lastWatchedEpisode,
 } from '../../tracking/status';
 
@@ -18,10 +19,20 @@ function codeLabel(t, episode) {
   return t('common.episodeCode', episodeCode(episode));
 }
 
+function formatAirDate(iso) {
+  if (!iso) {
+    return null;
+  }
+  const [year, month, day] = String(iso).split('-').map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString();
+}
+
 export default function ShowCard({
   show,
   entry,
   onPress,
+  onOpenEpisode,
+  onMarkEpisodeWatched,
   primaryLabel,
   onPrimary,
   secondaryLabel,
@@ -34,47 +45,106 @@ export default function ShowCard({
   const progress = getProgress(show, entry);
   const last = lastWatchedEpisode(show, entry);
   const color = colors.status[status] || colors.textMuted;
+  const nextReleased = Boolean(next && isReleased(next));
+  const useEpisodeActions = Boolean(onOpenEpisode && next && nextReleased);
 
-  let meta = t(`tv.status.${status}`);
-  if (status === 'watching' && next) {
-    meta = t('tv.next', { code: codeLabel(t, next), title: episodeTitle(t, next) });
-  } else if (status === 'dropped' && last) {
-    meta = t('tv.stoppedAt', { code: codeLabel(t, last) });
+  let fallbackMeta = t(`tv.status.${status}`);
+  if (status === 'dropped' && last) {
+    fallbackMeta = t('tv.stoppedAt', { code: codeLabel(t, last) });
   } else if (status === 'plan') {
-    meta = t('tv.notStarted');
+    fallbackMeta = t('tv.notStarted');
   } else if (progress.total > 0) {
-    meta = t('tv.progress', progress);
+    fallbackMeta = t('tv.progress', progress);
   }
 
+  const progressLine = progress.total > 0
+    ? `${t(`tv.status.${status}`)} · ${t('tv.progress', progress)}`
+    : t(`tv.status.${status}`);
+
   const ratio = progress.total > 0 ? progress.watched / progress.total : 0;
+  const episodeMeta = next
+    ? [
+      next.airDate ? formatAirDate(next.airDate) : null,
+      typeof next.runtime === 'number' ? t('common.minutes', { count: next.runtime }) : null,
+    ].filter(Boolean).join(' · ')
+    : '';
+
+  const openNextEpisode = () => {
+    if (next && onOpenEpisode) {
+      onOpenEpisode(show, next);
+    }
+  };
+
+  const markNext = () => {
+    if (!next || !nextReleased || !onMarkEpisodeWatched) {
+      return;
+    }
+    onMarkEpisodeWatched(show, next);
+  };
 
   return (
     <View style={styles.card}>
-      <View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t('tv.openShow', { title, status: t(`tv.status.${status}`) })}
-          onPress={onPress}
-          style={styles.row}
-        >
-          <PosterThumb uri={show.poster} posterPath={show.posterPath} status={status} />
-          <View style={styles.body}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={t('tv.openShow', { title, status: t(`tv.status.${status}`) })}
+        onPress={onPress}
+        style={styles.row}
+      >
+        <PosterThumb uri={show.poster} posterPath={show.posterPath} status={status} />
+        <View style={styles.body}>
           <Text style={styles.title} numberOfLines={2}>
             {title}
           </Text>
-          <StatusBadge status={status} />
-          <Text style={styles.meta} numberOfLines={2}>
-            {meta}
-          </Text>
+          {useEpisodeActions ? (
+            <Text style={styles.meta} numberOfLines={1}>{progressLine}</Text>
+          ) : (
+            <>
+              <StatusBadge status={status} />
+              <Text style={styles.meta} numberOfLines={2}>{fallbackMeta}</Text>
+            </>
+          )}
           {progress.total > 0 && status !== 'plan' ? (
             <View style={styles.track}>
               <View style={[styles.fill, { width: `${Math.round(ratio * 100)}%`, backgroundColor: color }]} />
             </View>
           ) : null}
         </View>
-        </Pressable>
-      </View>
-      {primaryLabel || secondaryLabel ? (
+      </Pressable>
+
+      {useEpisodeActions ? (
+        <View style={styles.nextBlock}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('tv.openEpisode', {
+              code: codeLabel(t, next),
+              title: episodeTitle(t, next) || t('trakt.unavailable'),
+            })}
+            onPress={openNextEpisode}
+            style={styles.nextInfo}
+          >
+            <Text style={styles.nextKicker}>
+              {t('tv.nextEpisodeLabel', { code: codeLabel(t, next) })}
+            </Text>
+            <Text style={styles.nextTitle} numberOfLines={2}>
+              {episodeTitle(t, next) || t('trakt.unavailable')}
+            </Text>
+            {episodeMeta ? (
+              <Text style={styles.meta} numberOfLines={1}>{episodeMeta}</Text>
+            ) : null}
+          </Pressable>
+          <PrimaryButton
+            label={t('tv.markWatched')}
+            onPress={markNext}
+            accessibilityLabel={t('tv.markWatchedAndOpen', {
+              code: codeLabel(t, next),
+              title: episodeTitle(t, next) || t('trakt.unavailable'),
+            })}
+            style={styles.markButton}
+          />
+        </View>
+      ) : null}
+
+      {!useEpisodeActions && (primaryLabel || secondaryLabel) ? (
         <View style={styles.actions}>
           {primaryLabel ? (
             <PrimaryButton
@@ -111,6 +181,7 @@ const styles = StyleSheet.create({
   body: {
     flex: 1,
     gap: 6,
+    minWidth: 0,
   },
   title: {
     ...typography.body,
@@ -129,6 +200,27 @@ const styles = StyleSheet.create({
   },
   fill: {
     height: '100%',
+  },
+  nextBlock: {
+    gap: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  nextInfo: {
+    gap: 4,
+  },
+  nextKicker: {
+    ...typography.label,
+    color: colors.primary,
+  },
+  nextTitle: {
+    ...typography.body,
+    color: colors.text,
+  },
+  markButton: {
+    alignSelf: 'stretch',
+    minHeight: 40,
   },
   actions: {
     flexDirection: 'row',

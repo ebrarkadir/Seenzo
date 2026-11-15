@@ -33,6 +33,7 @@ import {
   markNextReleased,
   markSeasonUnwatched,
   markSeasonWatched,
+  markShowWatched,
   toggleReleasedEpisode,
   undoEpisodeChanges,
 } from './progress';
@@ -501,6 +502,42 @@ export function TrackingProvider({ children }) {
     }
   }, [commit, updateUndo]);
 
+  const setShowWatched = useCallback((showId) => {
+    const show = getShow(showId);
+    if (!show) {
+      return;
+    }
+    let result = null;
+    commit((prev) => {
+      const existing = prev.shows[showId];
+      result = markShowWatched(show, existing);
+      if (!result.added.length) {
+        result = null;
+        return prev;
+      }
+      return {
+        ...prev,
+        shows: {
+          ...prev.shows,
+          [showId]: result.entry,
+        },
+      };
+    });
+    if (result) {
+      updateUndo({
+        kind: 'show',
+        showId,
+        added: result.added,
+        removed: result.removed,
+        previousIntent: result.previousIntent,
+        created: result.created,
+        episodeTitle: '',
+      });
+    } else {
+      updateUndo(null);
+    }
+  }, [commit, updateUndo]);
+
   const setShowIntent = useCallback((showId, intent) => {
     if (!getShow(showId)) {
       return;
@@ -677,6 +714,7 @@ export function TrackingProvider({ children }) {
     markNextWatched,
     toggleEpisode,
     setSeasonWatched,
+    setShowWatched,
     setShowIntent,
     removeShow,
     setShowRating,
@@ -704,6 +742,7 @@ export function TrackingProvider({ children }) {
     markNextWatched,
     toggleEpisode,
     setSeasonWatched,
+    setShowWatched,
     setShowIntent,
     removeShow,
     setShowRating,

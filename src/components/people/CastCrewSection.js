@@ -3,7 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 
-import { fetchEpisodePeople, fetchShowPeople } from '../../services/trakt/people';
+import { fetchEpisodePeople, fetchMoviePeople, fetchShowPeople } from '../../services/trakt/people';
 import { colors, spacing, typography } from '../../theme';
 import PrimaryButton from '../ui/PrimaryButton';
 import {
@@ -17,9 +17,10 @@ const PREVIEW_COUNT = 12;
 
 export default function CastCrewSection(props) {
   const [attempt, setAttempt] = useState(0);
+  const mediaId = props.mode === 'movie' ? props.traktMovieId : props.traktShowId;
   return (
     <CastCrewSectionBody
-      key={`${props.mode}-${props.traktShowId}-${props.seasonNumber ?? 'x'}-${props.episodeNumber ?? 'x'}-${attempt}`}
+      key={`${props.mode}-${mediaId}-${props.seasonNumber ?? 'x'}-${props.episodeNumber ?? 'x'}-${attempt}`}
       {...props}
       onRetry={() => setAttempt((value) => value + 1)}
     />
@@ -29,6 +30,7 @@ export default function CastCrewSection(props) {
 function CastCrewSectionBody({
   mode,
   traktShowId,
+  traktMovieId,
   seasonNumber,
   episodeNumber,
   compact = false,
@@ -44,11 +46,14 @@ function CastCrewSectionBody({
   useEffect(() => {
     let active = true;
     const load = async () => {
-      if (mode !== 'episode') {
-        return { data: await fetchShowPeople(traktShowId), source: 'show' };
+      if (mode === 'movie') {
+        return { data: await fetchMoviePeople(traktMovieId), source: 'movie' };
       }
-      const episodePeople = await fetchEpisodePeople(traktShowId, seasonNumber, episodeNumber);
-      return { data: episodePeople, source: 'episode' };
+      if (mode === 'episode') {
+        const episodePeople = await fetchEpisodePeople(traktShowId, seasonNumber, episodeNumber);
+        return { data: episodePeople, source: 'episode' };
+      }
+      return { data: await fetchShowPeople(traktShowId), source: 'show' };
     };
     load()
       .then((result) => {
@@ -72,7 +77,7 @@ function CastCrewSectionBody({
     return () => {
       active = false;
     };
-  }, [episodeNumber, mode, seasonNumber, traktShowId]);
+  }, [episodeNumber, mode, seasonNumber, traktMovieId, traktShowId]);
 
   if (loading) {
     return <Text style={styles.meta}>{t('people.loading')}</Text>;
@@ -92,7 +97,7 @@ function CastCrewSectionBody({
   const departments = people?.departments || [];
   const visibleCast = showAllCast ? cast : cast.slice(0, PREVIEW_COUNT);
   const empty = !cast.length && !guests.length && !departments.length;
-  const collapsibleCrew = mode === 'show';
+  const collapsibleCrew = mode === 'show' || mode === 'movie';
 
   if (empty) {
     return <Text style={styles.meta}>{t('people.empty')}</Text>;

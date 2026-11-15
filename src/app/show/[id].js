@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useUndoTimer } from '../../tracking/useUndoTimer';
 import PosterThumb from '../../components/ui/PosterThumb';
+import RateChip from '../../components/ui/RateChip';
 import RatingSheet from '../../components/ui/RatingSheet';
 import StatusBadge from '../../components/ui/StatusBadge';
 import UndoBar from '../../components/tracking/UndoBar';
@@ -43,6 +44,7 @@ export default function ShowDetailScreen() {
     undo,
     toggleEpisode,
     setSeasonWatched,
+    setShowWatched,
     setShowIntent,
     removeShow,
     toggleShowWatchlist,
@@ -146,6 +148,7 @@ export default function ShowDetailScreen() {
 
   const status = entry ? deriveShowStatus(show, entry) : null;
   const progress = getProgress(show, entry);
+  const allReleasedWatched = progress.total > 0 && progress.watched === progress.total;
   const watched = new Set(entry?.watchedEpisodeIds || []);
   const overflowOptions = [];
   if (!entry) {
@@ -194,18 +197,7 @@ export default function ShowDetailScreen() {
         <View style={styles.header}>
           <PosterThumb uri={show.poster} posterPath={show.posterPath} width={96} height={144} status={status} />
           <View style={styles.headerCopy}>
-            <View style={styles.titleRow}>
-              <Text style={styles.title}>{mediaTitle(t, show)}</Text>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={t('tv.moreActions')}
-                onPress={() => setMenuOpen(true)}
-                hitSlop={8}
-                style={styles.moreButton}
-              >
-                <Ionicons name="ellipsis-vertical" size={20} color={colors.text} />
-              </Pressable>
-            </View>
+            <Text style={styles.title}>{mediaTitle(t, show)}</Text>
             <Text style={styles.meta}>{show.year || t('trakt.unavailable')}</Text>
             <Text style={styles.meta}>
               {show.releaseStatus ? t(`tv.release.${show.releaseStatus}`) : t('trakt.unavailable')}
@@ -219,20 +211,54 @@ export default function ShowDetailScreen() {
             <Text style={styles.meta}>
               {progress.total ? t('tv.progress', progress) : t('tv.noReleased')}
             </Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t('rating.show')}
-              onPress={() => {
-                setDraft(showRating);
-                setRatingTarget({ type: 'show' });
-              }}
-              style={styles.rateChip}
-            >
-              <Ionicons name="star-outline" size={16} color={colors.primary} />
-              <Text style={styles.rateValue}>
-                {showRating != null ? t('common.ratingValue', { rating: showRating }) : t('rating.rate')}
-              </Text>
-            </Pressable>
+            <View style={styles.headerActions}>
+              {progress.total ? (
+                allReleasedWatched ? (
+                  <View style={[styles.markShowChip, styles.markShowChipDone]}>
+                    <Ionicons name="checkmark-circle" size={16} color={colors.onPrimary} />
+                    <Text style={[styles.markShowText, styles.markShowTextDone]}>
+                      {t('tv.markShowWatchedDone')}
+                    </Text>
+                  </View>
+                ) : (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t('tv.markShowWatched')}
+                    onPress={() => {
+                      Alert.alert(t('tv.markShowWatchedTitle'), t('tv.markShowWatchedMessage'), [
+                        { text: t('common.cancel'), style: 'cancel' },
+                        {
+                          text: t('tv.markShowWatchedConfirm'),
+                          onPress: () => setShowWatched(show.id),
+                        },
+                      ]);
+                    }}
+                    hitSlop={6}
+                    style={styles.markShowChip}
+                  >
+                    <Ionicons name="checkmark" size={16} color={colors.primary} />
+                    <Text style={styles.markShowText}>{t('tv.markShowWatched')}</Text>
+                  </Pressable>
+                )
+              ) : null}
+              <RateChip
+                label={showRating != null ? t('common.ratingValue', { rating: showRating }) : t('rating.rate')}
+                accessibilityLabel={t('rating.show')}
+                onPress={() => {
+                  setDraft(showRating);
+                  setRatingTarget({ type: 'show' });
+                }}
+              />
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t('tv.moreActions')}
+                onPress={() => setMenuOpen(true)}
+                hitSlop={8}
+                style={styles.moreButton}
+              >
+                <Ionicons name="ellipsis-vertical" size={20} color={colors.text} />
+              </Pressable>
+            </View>
           </View>
         </View>
         <Text style={styles.body}>{mediaSynopsis(t, show) || t('trakt.unavailable')}</Text>
@@ -302,40 +328,72 @@ export default function ShowDetailScreen() {
                     const isWatched = released && watched.has(episode.id);
                     const code = t('common.episodeCode', episodeCode(episode));
                     const episodeRating = episodeRatings?.[episode.id] ?? null;
+                    const openEpisode = () => setSelectedEpisodeId(episode.id);
+                    const onCheckPress = () => {
+                      if (!released) {
+                        return;
+                      }
+                      if (!isWatched) {
+                        toggleEpisode(show.id, episode.id);
+                      }
+                      openEpisode();
+                    };
                     return (
-                      <Pressable
-                        key={episode.id}
-                        accessibilityRole="button"
-                        accessibilityLabel={t('tv.openEpisode', {
-                          code,
-                          title: episodeTitle(t, episode) || t('trakt.unavailable'),
-                        })}
-                        onPress={() => setSelectedEpisodeId(episode.id)}
-                        style={styles.episode}
-                      >
-                        <Ionicons
-                          name={released ? (isWatched ? 'checkmark-circle' : 'ellipse-outline') : 'lock-closed-outline'}
-                          size={22}
-                          color={released ? (isWatched ? colors.primary : colors.textMuted) : colors.textMuted}
-                        />
-                        <View style={styles.episodeCopy}>
-                          <Text style={styles.episodeTitle}>
-                            {code} · {episodeTitle(t, episode) || t('trakt.unavailable')}
-                          </Text>
-                          <Text style={styles.meta}>
-                            {released
-                              ? [
-                                episode.airDate ? t('tv.airedOn', { date: formatAirDate(episode.airDate) }) : null,
-                                typeof episode.runtime === 'number' ? t('common.minutes', { count: episode.runtime }) : null,
-                                episodeRating != null ? t('common.ratingValue', { rating: episodeRating }) : null,
-                              ].filter(Boolean).join(' · ') || t('trakt.unavailable')
-                              : episode.airDate
-                                ? t('tv.upcoming', { date: formatAirDate(episode.airDate) })
-                                : t('upcoming.tba')}
-                          </Text>
-                        </View>
-                        <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-                      </Pressable>
+                      <View key={episode.id} style={styles.episode}>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel={
+                            released
+                              ? (isWatched
+                                ? t('tv.openEpisode', {
+                                  code,
+                                  title: episodeTitle(t, episode) || t('trakt.unavailable'),
+                                })
+                                : t('tv.markWatchedAndOpen', {
+                                  code,
+                                  title: episodeTitle(t, episode) || t('trakt.unavailable'),
+                                }))
+                              : t('tv.episodeLocked', { code })
+                          }
+                          disabled={!released}
+                          onPress={onCheckPress}
+                          hitSlop={8}
+                          style={styles.episodeCheck}
+                        >
+                          <Ionicons
+                            name={released ? (isWatched ? 'checkmark-circle' : 'ellipse-outline') : 'lock-closed-outline'}
+                            size={22}
+                            color={released ? (isWatched ? colors.primary : colors.textMuted) : colors.textMuted}
+                          />
+                        </Pressable>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel={t('tv.openEpisode', {
+                            code,
+                            title: episodeTitle(t, episode) || t('trakt.unavailable'),
+                          })}
+                          onPress={openEpisode}
+                          style={styles.episodeMain}
+                        >
+                          <View style={styles.episodeCopy}>
+                            <Text style={styles.episodeTitle}>
+                              {code} · {episodeTitle(t, episode) || t('trakt.unavailable')}
+                            </Text>
+                            <Text style={styles.meta}>
+                              {released
+                                ? [
+                                  episode.airDate ? t('tv.airedOn', { date: formatAirDate(episode.airDate) }) : null,
+                                  typeof episode.runtime === 'number' ? t('common.minutes', { count: episode.runtime }) : null,
+                                  episodeRating != null ? t('common.ratingValue', { rating: episodeRating }) : null,
+                                ].filter(Boolean).join(' · ') || t('trakt.unavailable')
+                                : episode.airDate
+                                  ? t('tv.upcoming', { date: formatAirDate(episode.airDate) })
+                                  : t('upcoming.tba')}
+                            </Text>
+                          </View>
+                          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+                        </Pressable>
+                      </View>
                     );
                   })}
                 </View>
@@ -364,7 +422,7 @@ export default function ShowDetailScreen() {
           }
         }}
         onRate={() => {
-          if (!selectedEpisode) {
+          if (!selectedEpisode || !watched.has(selectedEpisode.id)) {
             return;
           }
           setDraft(episodeRatings?.[selectedEpisode.id] ?? null);
@@ -387,6 +445,9 @@ export default function ShowDetailScreen() {
             return;
           }
           if (ratingTarget.type === 'episode') {
+            if (!watched.has(ratingTarget.id)) {
+              return;
+            }
             setEpisodeRating(ratingTarget.id, draft);
           } else {
             setShowRating(show.id, draft);
@@ -398,6 +459,9 @@ export default function ShowDetailScreen() {
             return;
           }
           if (ratingTarget.type === 'episode') {
+            if (!watched.has(ratingTarget.id)) {
+              return;
+            }
             setEpisodeRating(ratingTarget.id, null);
           } else {
             setShowRating(show.id, null);
@@ -433,15 +497,15 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: spacing.sm,
   },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-  },
   title: {
     ...typography.title,
     color: colors.text,
-    flex: 1,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   moreButton: {
     width: 36,
@@ -453,6 +517,28 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  markShowChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    minHeight: 36,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radii.full,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceElevated,
+  },
+  markShowChipDone: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  markShowText: {
+    ...typography.label,
+    color: colors.textSecondary,
+  },
+  markShowTextDone: {
+    color: colors.onPrimary,
+  },
   body: {
     ...typography.body,
     color: colors.textSecondary,
@@ -460,22 +546,6 @@ const styles = StyleSheet.create({
   meta: {
     ...typography.caption,
     color: colors.textSecondary,
-  },
-  rateChip: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    minHeight: 36,
-    paddingHorizontal: spacing.sm,
-    borderRadius: radii.full,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  rateValue: {
-    ...typography.label,
-    color: colors.primary,
   },
   seasonCard: {
     borderRadius: radii.lg,
@@ -552,9 +622,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    padding: spacing.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
     borderRadius: radii.md,
     backgroundColor: colors.surfaceElevated,
+  },
+  episodeCheck: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  episodeMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    minHeight: 40,
   },
   episodeCopy: {
     flex: 1,

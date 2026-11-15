@@ -18,7 +18,7 @@ const people = loadModules(
 );
 const crewUi = loadModules(
   ['src/components/people/crewPresentation.js'],
-  'pickKeyCrewMembers, countCrewMembers, shouldAccordionDepartments, KEY_CREW_LIMIT'
+  'pickKeyCrewMembers, countCrewMembers, shouldAccordionDepartments, KEY_CREW_LIMIT, CREW_PRIORITY_TIERS'
 );
 const votes = loadModules(
   ['src/services/supabase/performanceVotes.js'],
@@ -115,13 +115,66 @@ expect('detects votes_unavailable code', votes.isVotesSetupUnavailable({ code: '
 expect('ignores unrelated errors', votes.isVotesSetupUnavailable({ code: '42501', message: 'permission' }), false);
 
 const keyCrew = crewUi.pickKeyCrewMembers(normalized);
-expect('key crew prefers creator/director/writer/exec', keyCrew.map((item) => item.person.personId), [44, 33]);
+expect('key crew prefers director then writer', keyCrew.map((item) => item.person.personId), [44, 33]);
+expect('priority tiers start with director', crewUi.CREW_PRIORITY_TIERS.map((tier) => tier.key), ['director', 'writer', 'creator', 'producer']);
 expect('key crew stays within limit', keyCrew.length <= crewUi.KEY_CREW_LIMIT, true);
 expect('crew count includes all departments', crewUi.countCrewMembers(normalized), 2);
 expect('small crew skips department accordion', crewUi.shouldAccordionDepartments(normalized), false);
 
+const movieLike = people.normalizePeoplePayload({
+  cast: [],
+  crew: {
+    directing: [
+      { job: 'Assistant Director', person: { name: 'AD', ids: { trakt: 1 }, images: null } },
+      { job: 'Director', person: { name: 'Real Director', ids: { trakt: 2 }, images: null } },
+      { jobs: ['Director'], person: { name: 'Co Director', ids: { trakt: 3 }, images: null } },
+    ],
+    writing: [
+      { jobs: ['Writer'], person: { name: 'Writer', ids: { trakt: 4 }, images: null } },
+    ],
+    production: [
+      { jobs: ['Publicist'], person: { name: 'Publicist', ids: { trakt: 5 }, images: null } },
+      { jobs: ['Executive Producer'], person: { name: 'EP', ids: { trakt: 6 }, images: null } },
+    ],
+  },
+});
+const movieKey = crewUi.pickKeyCrewMembers(movieLike);
+expect('directing list sorts exact directors first', movieLike.crewByDepartment.directing.map((item) => item.personId), [2, 3, 1]);
+expect('exact directors appear first', movieKey.map((item) => item.person.personId).slice(0, 2), [2, 3]);
+expect('assistant director stays out of collapsed preview', movieKey.some((item) => item.person.personId === 1), false);
+expect('writer follows directors', movieKey.map((item) => item.person.personId).slice(0, 3), [2, 3, 4]);
+expect('executive producer outranks publicist', movieKey.findIndex((item) => item.person.personId === 6) < movieKey.findIndex((item) => item.person.personId === 5) || !movieKey.some((item) => item.person.personId === 5), true);
+expect('priority order is directors writer producer', movieKey.map((item) => item.person.personId).slice(0, 4), [2, 3, 4, 6]);
+
+const dualRole = people.normalizePeoplePayload({
+  cast: [],
+  crew: {
+    directing: [{ jobs: ['Director'], person: { name: 'Dual', ids: { trakt: 70 }, images: null } }],
+    writing: [{ jobs: ['Writer'], person: { name: 'Dual', ids: { trakt: 70 }, images: null } }],
+    production: [{ jobs: ['Producer'], person: { name: 'Other Prod', ids: { trakt: 71 }, images: null } }],
+  },
+});
+const dualKey = crewUi.pickKeyCrewMembers(dualRole);
+expect('dual-role director keeps writer job title', dualKey[0].person.jobs, ['Director', 'Writer']);
+expect('dual-role person appears once', dualKey.filter((item) => item.person.personId === 70).length, 1);
+expect('producer follows dual-role person', dualKey.map((item) => item.person.personId), [70, 71]);
+
+const showLike = people.normalizePeoplePayload({
+  cast: [],
+  crew: {
+    'created by': [{ jobs: ['Creator'], person: { name: 'Show Creator', ids: { trakt: 10 }, images: null } }],
+    writing: [{ jobs: ['Writer'], person: { name: 'Show Writer', ids: { trakt: 11 }, images: null } }],
+    production: [{ jobs: ['Executive Producer'], person: { name: 'Show EP', ids: { trakt: 12 }, images: null } }],
+  },
+});
+const showKey = crewUi.pickKeyCrewMembers(showLike);
+expect('show without directors does not invent one', showKey.every((item) => !item.person.jobs.map((j) => j.toLowerCase()).includes('director')), true);
+expect('show priority is writer then creator then producer', showKey.map((item) => item.person.personId), [11, 10, 12]);
+expect('creator is not labeled by inventing director job', showKey[1].person.jobs, ['Creator']);
+
 const castCrewSource = fs.readFileSync(path.join(__dirname, '..', 'src/components/people/CastCrewSection.js'), 'utf8');
-expect('show mode uses collapsible crew', castCrewSource.includes('collapsibleCrew = mode === \'show\''), true);
+expect('show and movie modes use collapsible crew', castCrewSource.includes("collapsibleCrew = mode === 'show' || mode === 'movie'"), true);
+expect('cast crew can load movie people', castCrewSource.includes('fetchMoviePeople'), true);
 expect('crew show more uses i18n key', castCrewSource.includes('people.showMoreCrew'), true);
 expect('episode path does not fetch show fallback', castCrewSource.includes('source: \'show-fallback\''), false);
 

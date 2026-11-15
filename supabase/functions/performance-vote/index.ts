@@ -5,6 +5,9 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const ACTOR_CACHE_TTL_MS = 30 * 60 * 1000;
+const actorIdCache = new Map<string, { at: number; ids: Set<number> }>();
+
 type VoteBody = {
   action?: string;
   showTraktId?: number;
@@ -64,12 +67,43 @@ function extractEpisodeActorIds(peoplePayload: {
   return ids;
 }
 
-async function fetchEpisodePeople(showTraktId: number, seasonNumber: number, episodeNumber: number) {
+function cacheKey(showTraktId: number, seasonNumber: number, episodeNumber: number) {
+  return `${showTraktId}:${seasonNumber}:${episodeNumber}`;
+}
+
+function getCachedActorIds(showTraktId: number, seasonNumber: number, episodeNumber: number) {
+  const key = cacheKey(showTraktId, seasonNumber, episodeNumber);
+  const hit = actorIdCache.get(key);
+  if (!hit || Date.now() - hit.at > ACTOR_CACHE_TTL_MS) {
+    return null;
+  }
+  return hit.ids;
+}
+
+function setCachedActorIds(
+  showTraktId: number,
+  seasonNumber: number,
+  episodeNumber: number,
+  ids: Set<number>,
+) {
+  actorIdCache.set(cacheKey(showTraktId, seasonNumber, episodeNumber), {
+    at: Date.now(),
+    ids,
+  });
+}
+
+async function fetchEpisodeActorIds(showTraktId: number, seasonNumber: number, episodeNumber: number) {
+  const cached = getCachedActorIds(showTraktId, seasonNumber, episodeNumber);
+  if (cached) {
+    return { ids: cached, cache: 'hit' as const };
+  }
+
   const clientId = Deno.env.get('TRAKT_CLIENT_ID')?.trim();
   if (!clientId) {
     throw new Error('trakt_config');
   }
-  const path = `https://api.trakt.tv/shows/${encodeURIComponent(String(showTraktId))}/seasons/${seasonNumber}/episodes/${episodeNumber}/people?extended=full,guest_stars`;
+  // guest_stars is required for guests; full artwork is unnecessary for ID validation.
+  const path = `https://api.trakt.tv/shows/${encodeURIComponent(String(showTraktId))}/seasons/${seasonNumber}/episodes/${episodeNumber}/people?extended=guest_stars`;
   const response = await fetch(path, {
     headers: {
       Accept: 'application/json',
@@ -82,10 +116,20 @@ async function fetchEpisodePeople(showTraktId: number, seasonNumber: number, epi
   if (!response.ok) {
     throw new Error(`trakt_${response.status}`);
   }
-  return response.json();
+  const people = await response.json();
+  const ids = extractEpisodeActorIds(people);
+  setCachedActorIds(showTraktId, seasonNumber, episodeNumber, ids);
+  return { ids, cache: 'miss' as const };
+}
+
+function withTiming(timings: Record<string, number>, label: string, started: number) {
+  timings[label] = Date.now() - started;
 }
 
 Deno.serve(async (req) => {
+  const timings: Record<string, number> = {};
+  const requestStarted = Date.now();
+
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
@@ -105,6 +149,7 @@ Deno.serve(async (req) => {
     return json(401, { error: 'unauthenticated' });
   }
 
+  const authStarted = Date.now();
   const userClient = createClient(supabaseUrl, anonKey, {
     global: { headers: { Authorization: authHeader } },
   });
@@ -112,8 +157,9 @@ Deno.serve(async (req) => {
     data: { user },
     error: userError,
   } = await userClient.auth.getUser();
+  withTiming(timings, 'auth_ms', authStarted);
   if (userError || !user?.id) {
-    return json(401, { error: 'unauthenticated' });
+    return json(401, { error: 'unauthenticated', timings });
   }
 
   let body: VoteBody;
@@ -130,9 +176,11 @@ Deno.serve(async (req) => {
 
   const admin = createClient(supabaseUrl, serviceKey);
   const showMediaId = `trakt-show-${parsed.showTraktId}`;
+  let myPersonId: number | null = null;
 
   if (parsed.action === 'cast') {
-    const { data: episodeRow, error: episodeError } = await admin
+    const validateStarted = Date.now();
+    const watchedPromise = admin
       .from('episode_entries')
       .select('watched')
       .eq('user_id', user.id)
@@ -141,26 +189,37 @@ Deno.serve(async (req) => {
       .eq('episode_number', parsed.episodeNumber)
       .eq('watched', true)
       .maybeSingle();
+    const actorsPromise = fetchEpisodeActorIds(
+      parsed.showTraktId,
+      parsed.seasonNumber,
+      parsed.episodeNumber,
+    );
 
-    if (episodeError) {
-      return json(500, { error: 'watched_lookup_failed' });
+    const [watchedResult, actorsResult] = await Promise.all([
+      watchedPromise,
+      actorsPromise.then(
+        (value) => ({ ok: true as const, value }),
+        (error) => ({ ok: false as const, error }),
+      ),
+    ]);
+    withTiming(timings, 'validate_ms', validateStarted);
+
+    if (watchedResult.error) {
+      return json(500, { error: 'watched_lookup_failed', timings });
     }
-    if (!episodeRow) {
-      return json(403, { error: 'episode_not_watched' });
+    if (!watchedResult.data) {
+      return json(403, { error: 'episode_not_watched', timings });
+    }
+    if (!actorsResult.ok) {
+      return json(502, { error: 'trakt_unavailable', timings });
     }
 
-    let people;
-    try {
-      people = await fetchEpisodePeople(parsed.showTraktId, parsed.seasonNumber, parsed.episodeNumber);
-    } catch {
-      return json(502, { error: 'trakt_unavailable' });
+    timings.trakt_cache = actorsResult.value.cache === 'hit' ? 1 : 0;
+    if (!actorsResult.value.ids.has(parsed.personTraktId as number)) {
+      return json(403, { error: 'actor_not_in_episode', timings });
     }
 
-    const eligible = extractEpisodeActorIds(people);
-    if (!eligible.has(parsed.personTraktId as number)) {
-      return json(403, { error: 'actor_not_in_episode' });
-    }
-
+    const writeStarted = Date.now();
     const { error: upsertError } = await admin.from('performance_votes').upsert(
       {
         user_id: user.id,
@@ -171,10 +230,13 @@ Deno.serve(async (req) => {
       },
       { onConflict: 'user_id,show_trakt_id,season_number,episode_number' },
     );
+    withTiming(timings, 'write_ms', writeStarted);
     if (upsertError) {
-      return json(500, { error: 'vote_save_failed' });
+      return json(500, { error: 'vote_save_failed', timings });
     }
+    myPersonId = parsed.personTraktId as number;
   } else {
+    const writeStarted = Date.now();
     const { error: deleteError } = await admin
       .from('performance_votes')
       .delete()
@@ -182,31 +244,24 @@ Deno.serve(async (req) => {
       .eq('show_trakt_id', parsed.showTraktId)
       .eq('season_number', parsed.seasonNumber)
       .eq('episode_number', parsed.episodeNumber);
+    withTiming(timings, 'write_ms', writeStarted);
     if (deleteError) {
-      return json(500, { error: 'vote_clear_failed' });
+      return json(500, { error: 'vote_clear_failed', timings });
     }
+    myPersonId = null;
   }
 
+  const statsStarted = Date.now();
   const { data: stats, error: statsError } = await admin.rpc('performance_vote_stats', {
     p_show_trakt_id: parsed.showTraktId,
     p_season_number: parsed.seasonNumber,
     p_episode_number: parsed.episodeNumber,
   });
+  withTiming(timings, 'stats_ms', statsStarted);
   if (statsError) {
-    return json(500, { error: 'stats_failed' });
+    return json(500, { error: 'stats_failed', timings });
   }
 
-  // Re-scope my vote using the caller's identity (service role RPC sees null auth.uid()).
-  const { data: mine } = await admin
-    .from('performance_votes')
-    .select('person_trakt_id')
-    .eq('user_id', user.id)
-    .eq('show_trakt_id', parsed.showTraktId)
-    .eq('season_number', parsed.seasonNumber)
-    .eq('episode_number', parsed.episodeNumber)
-    .maybeSingle();
-
-  const myPersonId = mine?.person_trakt_id ?? null;
   const rows = (stats || []).map((row: {
     person_trakt_id: number | null;
     vote_count: number;
@@ -217,5 +272,6 @@ Deno.serve(async (req) => {
     my_person_trakt_id: myPersonId,
   }));
 
-  return json(200, { ok: true, stats: rows });
+  timings.total_ms = Date.now() - requestStarted;
+  return json(200, { ok: true, stats: rows, timings });
 });

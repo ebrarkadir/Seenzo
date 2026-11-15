@@ -118,7 +118,7 @@ movies.forEach((movie) => {
 });
 const progress = loadModules(
   ['src/tracking/status.js', 'src/tracking/progress.js'],
-  'markNextReleased, toggleReleasedEpisode, undoAddedEpisodes, undoEpisodeChanges, markSeasonWatched, markSeasonUnwatched, deriveShowStatus, getNextEpisode, getProgress, getSeasonProgress, listShowSeasons, releasedEpisodes'
+  'markNextReleased, toggleReleasedEpisode, undoAddedEpisodes, undoEpisodeChanges, markSeasonWatched, markSeasonUnwatched, markShowWatched, deriveShowStatus, getNextEpisode, getProgress, getSeasonProgress, listShowSeasons, releasedEpisodes'
 );
 
 function episode(id, season, number, airDate) {
@@ -225,6 +225,19 @@ const droppedSeason = progress.markSeasonWatched(series, { intent: 'dropped', wa
 expect('dropped stays dropped after marking a season', droppedSeason.entry.intent, 'dropped');
 const specialSeason = progress.markSeasonWatched(series, { intent: 'watching', watchedEpisodeIds: ['s1e1'], rating: null }, 0, TODAY);
 expect('specials do not clear regular progress', specialSeason.entry.watchedEpisodeIds.sort(), ['s1e1', 'special'].sort());
+const showMarked = progress.markShowWatched(series, { intent: 'plan', watchedEpisodeIds: [], rating: null }, TODAY);
+expect('mark show watched promotes plan', showMarked.entry.intent, 'watching');
+expect('mark show watched skips specials', showMarked.entry.watchedEpisodeIds.includes('special'), false);
+expect('mark show watched skips future episodes', showMarked.entry.watchedEpisodeIds.includes('s2future'), false);
+expect('mark show watched covers released regulars', showMarked.added.sort(), ['s1e1', 's1e3', 's2e1'].sort());
+const showAlready = progress.markShowWatched(series, showMarked.entry, TODAY);
+expect('mark show watched is a no-op when complete', showAlready.added, []);
+const showUndo = progress.undoEpisodeChanges(showMarked.entry, {
+  added: showMarked.added,
+  removed: showMarked.removed,
+  previousIntent: showMarked.previousIntent,
+});
+expect('undo restores pre-mark-show progress', showUndo.watchedEpisodeIds, []);
 
 const watchlist = loadModule('src/tracking/watchlist.js', [
   'applyShowWatchlistToggle',
@@ -238,6 +251,7 @@ const watchlist = loadModule('src/tracking/watchlist.js', [
   'applyMovieChanges',
   'applyShowRating',
   'applyEpisodeRating',
+  'isEpisodeWatched',
   'applyMovieRating',
   'applyShowIntent',
 ].join(', '));
@@ -291,11 +305,46 @@ movieState = watchlist.applyMovieWatchlistToggle(movieState, 'trakt-movie-9');
 movieState = watchlist.applyMovieChanges(movieState, 'trakt-movie-9', { watched: true, saved: true });
 movieState = watchlist.applyMovieRating(movieState, 'trakt-movie-9', 8);
 const ratedShow = watchlist.applyShowRating(movieState, 'trakt-show-3', 7);
-const ratedEpisode = watchlist.applyEpisodeRating(ratedShow, 'trakt-episode-4', 6);
+const blockedEpisodeRating = watchlist.applyEpisodeRating(ratedShow, 'trakt-episode-4', 6);
+expect('unwatched episode rating is rejected', blockedEpisodeRating.episodeRatings?.['trakt-episode-4'], undefined);
+const watchedForRating = {
+  ...ratedShow,
+  shows: {
+    ...(ratedShow.shows || {}),
+    'trakt-show-3': {
+      intent: 'watching',
+      watchedEpisodeIds: ['trakt-episode-4'],
+      rating: ratedShow.shows?.['trakt-show-3']?.rating ?? null,
+    },
+  },
+};
+expect('watched helper detects tracked episode', watchlist.isEpisodeWatched(watchedForRating, 'trakt-episode-4'), true);
+const ratedEpisode = watchlist.applyEpisodeRating(watchedForRating, 'trakt-episode-4', 6);
 expect('movie watch and rating stay on one record', Object.keys(ratedEpisode.movies), ['trakt-movie-9']);
 expect('show rating is stored apart from the movie', ratedEpisode.showRatings['trakt-show-3'], 7);
 expect('episode rating stays separate from the movie rating', ratedEpisode.episodeRatings['trakt-episode-4'], 6);
 expect('movie rating stays on the movie', ratedEpisode.movies['trakt-movie-9'].rating, 8);
+const unwatchedKeepsRating = {
+  ...ratedEpisode,
+  shows: {
+    ...ratedEpisode.shows,
+    'trakt-show-3': {
+      ...ratedEpisode.shows['trakt-show-3'],
+      watchedEpisodeIds: [],
+    },
+  },
+};
+expect('unwatching preserves stored episode rating', unwatchedKeepsRating.episodeRatings['trakt-episode-4'], 6);
+expect(
+  'unwatched episode cannot change rating further',
+  watchlist.applyEpisodeRating(unwatchedKeepsRating, 'trakt-episode-4', 9).episodeRatings['trakt-episode-4'],
+  6
+);
+expect(
+  'unwatched episode cannot remove rating',
+  watchlist.applyEpisodeRating(unwatchedKeepsRating, 'trakt-episode-4', null).episodeRatings['trakt-episode-4'],
+  6
+);
 const unwatched = watchlist.applyMovieChanges(ratedEpisode, 'trakt-movie-9', { watched: false, saved: true });
 expect('mark unwatched returns the movie to the watchlist', watchlist.isMovieWatchlisted(unwatched.movies['trakt-movie-9']), true);
 expect('unwatching a movie keeps its rating', unwatched.movies['trakt-movie-9'].rating, 8);
