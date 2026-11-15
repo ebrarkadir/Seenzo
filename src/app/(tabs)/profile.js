@@ -82,6 +82,7 @@ export default function ProfileScreen() {
         <Text style={styles.kicker}>{t('profile.demoKicker')}</Text>
         <Text style={styles.panelTitle}>{t('profile.demoTitle')}</Text>
         <Text style={styles.panelBody}>{t('profile.demoNote')}</Text>
+        <Text style={styles.kicker}>{t('profile.creditsKicker')}</Text>
         <Text style={styles.panelBody}>{t('profile.traktAttribution')}</Text>
         <Text style={styles.mode}>{demoMode ? t('profile.demoOn') : t('profile.demoOff')}</Text>
         <PrimaryButton

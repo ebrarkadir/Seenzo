@@ -21,7 +21,8 @@
     "save": "Save rating",
     "remove": "Remove rating",
     "close": "Close",
-    "watchToRate": "Mark this episode as watched to rate it."
+    "watchToRate": "Mark this episode as watched to rate it.",
+    "watchToRateMovie": "Mark this movie as watched to rate it."
   },
   "people": {
     "showCastCrew": "Cast & Crew",
@@ -53,13 +54,18 @@
     "performanceTitle": "Best Performance",
     "performanceBody": "Vote for the strongest performance in this episode. One vote per account.",
     "performancePrompt": "Who gave the best performance in this episode?",
+    "performancePromptMovie": "Who gave the best performance in this movie?",
     "performanceNoCandidates": "Voting needs episode cast credits from Trakt.",
+    "performanceNoCandidatesMovie": "Voting needs movie cast credits from Trakt.",
     "signInToVote": "Sign in to vote",
     "watchToVote": "Mark this episode watched to vote.",
+    "watchToVoteMovie": "Mark this movie watched to vote.",
     "actorNotEligible": "That actor is not credited for this episode.",
+    "actorNotEligibleMovie": "That actor is not credited for this movie.",
     "votesLoading": "Loading votes…",
     "votesError": "Votes could not be loaded.",
     "votesUnavailable": "Best Performance voting is not available yet. Deploy the performance votes migration and the performance-vote Edge Function.",
+    "votesUnavailableMovie": "Best Performance voting is not available yet. Deploy the movie performance votes migration and the movie-performance-vote Edge Function.",
     "noVotes": "No votes yet",
     "beFirstToVote": "Be the first to vote",
     "yourVote": "Your vote",
@@ -112,7 +118,8 @@
     "clearAccountMessage": "This removes your shows, movies, ratings, and watched episodes from this account.",
     "restartTitle": "Show onboarding again?",
     "restartMessage": "Your current lists stay until you change them. Onboarding will open next.",
-    "traktAttribution": "Seenzo uses Trakt but is not endorsed or certified by Trakt."
+    "traktAttribution": "Seenzo uses Trakt but is not endorsed or certified by Trakt.",
+    "creditsKicker": "Credits"
   },
   "auth": {
     "signInTitle": "Sign in",
@@ -313,6 +320,8 @@
     "watched": "Watched",
     "markWatched": "Mark watched",
     "markUnwatched": "Mark unwatched",
+    "markWatchedAndOpen": "Mark {{title}} watched and open details",
+    "closeMovie": "Close movie details",
     "removeFromList": "Remove from list",
     "addToWatchlist": "Add to Watchlist",
     "removeFromWatchlist": "Remove from Watchlist",

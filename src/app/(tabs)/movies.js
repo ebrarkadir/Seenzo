@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import PosterGrid from '../../components/media/PosterGrid';
 import { MoviePoster } from '../../components/media/LibraryTiles';
 import WatchedMoviesGrid from '../../components/media/WatchedMoviesGrid';
+import MovieDetailSheet from '../../components/tracking/MovieDetailSheet';
 import EmptyState from '../../components/ui/EmptyState';
 import SegmentedControl from '../../components/ui/SegmentedControl';
 import { mediaTitle } from '../../data/labels';
@@ -18,6 +19,7 @@ export default function MoviesScreen() {
   const { movies, saveMovie } = useTracking();
   const revision = useMediaRevision();
   const [segment, setSegment] = useState('toWatch');
+  const [sheetMovieId, setSheetMovieId] = useState(null);
 
   const toWatch = useMemo(() => {
     if (revision < 0) {
@@ -40,6 +42,16 @@ export default function MoviesScreen() {
     />
   );
 
+  const markWatchedAndOpen = (movieId) => {
+    const id = String(movieId || '').trim();
+    if (!id) {
+      return;
+    }
+    // Capture id before list moves the movie out of To Watch.
+    saveMovie(id, { watched: true, saved: true });
+    setSheetMovieId(id);
+  };
+
   if (segment === 'watched') {
     return (
       <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -49,6 +61,11 @@ export default function MoviesScreen() {
           emptyBody={t('movies.watchedEmptyBody')}
           emptyActionLabel={t('movies.discover')}
           onEmptyAction={() => router.push({ pathname: '/(tabs)/discover', params: { type: 'movie' } })}
+        />
+        <MovieDetailSheet
+          visible={Boolean(sheetMovieId)}
+          movieId={sheetMovieId}
+          onClose={() => setSheetMovieId(null)}
         />
       </View>
     );
@@ -76,9 +93,14 @@ export default function MoviesScreen() {
             width={size.width}
             height={size.height}
             onPress={() => router.push(`/movie/${item.movie.id}`)}
-            onMarkWatched={() => saveMovie(item.movie.id, { watched: true, saved: true })}
+            onMarkWatched={() => markWatchedAndOpen(item.movie.id)}
           />
         )}
+      />
+      <MovieDetailSheet
+        visible={Boolean(sheetMovieId)}
+        movieId={sheetMovieId}
+        onClose={() => setSheetMovieId(null)}
       />
     </View>
   );

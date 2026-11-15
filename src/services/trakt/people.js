@@ -181,6 +181,23 @@ export function collectEpisodeActors(people) {
   return actors;
 }
 
+/** Movie cast only — never crew. Deduped by Trakt person id. */
+export function collectMovieActors(people) {
+  const actors = [];
+  const seen = new Set();
+  (people?.cast || []).forEach((person) => {
+    if (!person?.personId || seen.has(person.personId)) {
+      return;
+    }
+    seen.add(person.personId);
+    actors.push({
+      ...person,
+      isGuest: false,
+    });
+  });
+  return actors;
+}
+
 export function clearPeopleCache() {
   memory.clear();
 }

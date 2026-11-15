@@ -75,7 +75,7 @@ export function MoviePoster({ movie, watched, rating, width, height, onPress, on
       badge={tracked && !watched ? t('discover.inLibrary') : null}
       onPress={onPress}
       accessibilityLabel={t('movies.openMovie', { title })}
-      quickLabel={onMarkWatched ? t('movies.markWatched') : null}
+      quickLabel={onMarkWatched ? t('movies.markWatchedAndOpen', { title }) : null}
       onQuick={onMarkWatched}
     />
   );

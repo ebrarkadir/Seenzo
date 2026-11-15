@@ -5,6 +5,14 @@ import { router } from 'expo-router';
 
 import { useAuth } from '../../auth/AuthContext';
 import {
+  castMoviePerformanceVote,
+  clearMoviePerformanceVote,
+  emptyVoteStats as emptyMovieVoteStats,
+  fetchMoviePerformanceVoteStats,
+  isMovieVotesSetupUnavailable,
+  rankPerformanceVotes as rankMovieVotes,
+} from '../../services/supabase/moviePerformanceVotes';
+import {
   castPerformanceVote,
   clearPerformanceVote,
   emptyVoteStats,
@@ -17,27 +25,35 @@ import PrimaryButton from '../ui/PrimaryButton';
 import PersonAvatar from './PersonAvatar';
 
 export default function PerformanceVoteSection(props) {
+  const mode = props.mode === 'movie' ? 'movie' : 'episode';
   const [attempt, setAttempt] = useState(0);
+  const scopeKey = mode === 'movie'
+    ? `movie-${props.traktMovieId}`
+    : `${props.traktShowId}-${props.seasonNumber}-${props.episodeNumber}`;
   return (
     <PerformanceVoteBody
-      key={`${props.traktShowId}-${props.seasonNumber}-${props.episodeNumber}-${attempt}`}
+      key={`${scopeKey}-${attempt}`}
       {...props}
+      mode={mode}
       onRetry={() => setAttempt((value) => value + 1)}
     />
   );
 }
 
 function PerformanceVoteBody({
+  mode = 'episode',
   traktShowId,
   seasonNumber,
   episodeNumber,
+  traktMovieId,
   candidates,
   watched = false,
   onRetry,
 }) {
   const { t } = useTranslation();
   const { session, ready } = useAuth();
-  const [stats, setStats] = useState(emptyVoteStats());
+  const isMovie = mode === 'movie';
+  const [stats, setStats] = useState(isMovie ? emptyMovieVoteStats() : emptyVoteStats());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [pendingPersonId, setPendingPersonId] = useState(null);
@@ -50,7 +66,10 @@ function PerformanceVoteBody({
       return undefined;
     }
     let active = true;
-    fetchPerformanceVoteStats(traktShowId, seasonNumber, episodeNumber)
+    const load = isMovie
+      ? fetchMoviePerformanceVoteStats(traktMovieId)
+      : fetchPerformanceVoteStats(traktShowId, seasonNumber, episodeNumber);
+    load
       .then((next) => {
         if (!active) {
           return;
@@ -64,21 +83,24 @@ function PerformanceVoteBody({
         if (!active) {
           return;
         }
-        const unavailable = isVotesSetupUnavailable(requestError);
+        const unavailable = isMovie
+          ? isMovieVotesSetupUnavailable(requestError)
+          : isVotesSetupUnavailable(requestError);
         setSetupUnavailable(unavailable);
         setError(unavailable ? null : requestError);
-        setStats(emptyVoteStats());
+        setStats(isMovie ? emptyMovieVoteStats() : emptyVoteStats());
         setLoading(false);
       });
     return () => {
       active = false;
     };
-  }, [episodeNumber, ready, seasonNumber, traktShowId]);
+  }, [episodeNumber, isMovie, ready, seasonNumber, traktMovieId, traktShowId]);
 
-  const confirmedRanked = useMemo(
-    () => rankPerformanceVotes(candidates, setupUnavailable ? emptyVoteStats() : stats),
-    [candidates, setupUnavailable, stats]
-  );
+  const confirmedRanked = useMemo(() => {
+    const ranking = isMovie ? rankMovieVotes : rankPerformanceVotes;
+    const fallback = isMovie ? emptyMovieVoteStats() : emptyVoteStats();
+    return ranking(candidates, setupUnavailable ? fallback : stats);
+  }, [candidates, isMovie, setupUnavailable, stats]);
 
   const ranked = useMemo(
     () => confirmedRanked.map((person) => ({
@@ -119,17 +141,24 @@ function PerformanceVoteBody({
 
     try {
       const next = clearing
-        ? await clearPerformanceVote({
-          showTraktId: traktShowId,
-          seasonNumber,
-          episodeNumber,
-        })
-        : await castPerformanceVote({
-          showTraktId: traktShowId,
-          seasonNumber,
-          episodeNumber,
-          personTraktId: personId,
-        });
+        ? (isMovie
+          ? await clearMoviePerformanceVote({ movieTraktId: traktMovieId })
+          : await clearPerformanceVote({
+            showTraktId: traktShowId,
+            seasonNumber,
+            episodeNumber,
+          }))
+        : (isMovie
+          ? await castMoviePerformanceVote({
+            movieTraktId: traktMovieId,
+            personTraktId: personId,
+          })
+          : await castPerformanceVote({
+            showTraktId: traktShowId,
+            seasonNumber,
+            episodeNumber,
+            personTraktId: personId,
+          }));
       if (requestSeq.current !== seq) {
         return;
       }
@@ -142,7 +171,10 @@ function PerformanceVoteBody({
       }
       setPendingPersonId(null);
       setStats(previousStats);
-      if (isVotesSetupUnavailable(requestError)) {
+      const unavailable = isMovie
+        ? isMovieVotesSetupUnavailable(requestError)
+        : isVotesSetupUnavailable(requestError);
+      if (unavailable) {
         setSetupUnavailable(true);
         setError(null);
       } else {
@@ -155,13 +187,21 @@ function PerformanceVoteBody({
     }
   };
 
+  const promptKey = isMovie ? 'people.performancePromptMovie' : 'people.performancePrompt';
+  const watchToVoteKey = isMovie ? 'people.watchToVoteMovie' : 'people.watchToVote';
+  const unavailableKey = isMovie ? 'people.votesUnavailableMovie' : 'people.votesUnavailable';
+  const noCandidatesKey = isMovie ? 'people.performanceNoCandidatesMovie' : 'people.performanceNoCandidates';
+  const actorErrorKey = isMovie ? 'people.actorNotEligibleMovie' : 'people.actorNotEligible';
+  const notWatchedCode = isMovie ? 'movie_not_watched' : 'episode_not_watched';
+  const actorCode = isMovie ? 'actor_not_in_movie' : 'actor_not_in_episode';
+
   return (
     <View style={styles.block}>
       <Text style={styles.heading}>{t('people.performanceTitle')}</Text>
-      <Text style={styles.meta}>{t('people.performancePrompt')}</Text>
+      <Text style={styles.meta}>{t(promptKey)}</Text>
 
       {setupUnavailable ? (
-        <Text style={styles.banner}>{t('people.votesUnavailable')}</Text>
+        <Text style={styles.banner}>{t(unavailableKey)}</Text>
       ) : null}
 
       {!session ? (
@@ -173,7 +213,7 @@ function PerformanceVoteBody({
       ) : null}
 
       {session && !watched ? (
-        <Text style={styles.banner}>{t('people.watchToVote')}</Text>
+        <Text style={styles.banner}>{t(watchToVoteKey)}</Text>
       ) : null}
 
       {loading ? <Text style={styles.meta}>{t('people.votesLoading')}</Text> : null}
@@ -182,13 +222,13 @@ function PerformanceVoteBody({
       {error ? (
         <View style={styles.errorBox}>
           <Text style={styles.meta}>
-            {error.code === 'episode_not_watched'
-              ? t('people.watchToVote')
-              : error.code === 'actor_not_in_episode'
-                ? t('people.actorNotEligible')
+            {error.code === notWatchedCode
+              ? t(watchToVoteKey)
+              : error.code === actorCode
+                ? t(actorErrorKey)
                 : t('people.votesError')}
           </Text>
-          {error.code === 'episode_not_watched' || error.code === 'actor_not_in_episode' ? null : (
+          {error.code === notWatchedCode || error.code === actorCode ? null : (
             <PrimaryButton label={t('people.retry')} variant="secondary" onPress={onRetry} />
           )}
         </View>
@@ -199,7 +239,7 @@ function PerformanceVoteBody({
       ) : null}
 
       {!candidates.length ? (
-        <Text style={styles.meta}>{t('people.performanceNoCandidates')}</Text>
+        <Text style={styles.meta}>{t(noCandidatesKey)}</Text>
       ) : (
         <>
           <ScrollView
@@ -248,24 +288,6 @@ function PerformanceVoteBody({
               );
             })}
           </ScrollView>
-
-          {!setupUnavailable && stats.totalVotes > 0 ? (
-            <View style={styles.rankList}>
-              {ranked.map((person) => (
-                <View key={`rank-${person.personId}`} style={styles.rankRow}>
-                  <View style={styles.rankCopy}>
-                    <Text style={styles.name} numberOfLines={1}>{person.name}</Text>
-                    <View style={styles.track}>
-                      <View style={[styles.fill, { width: `${person.percent}%` }]} />
-                    </View>
-                  </View>
-                  <Text style={styles.meta}>
-                    {t('people.voteStats', { percent: person.percent, count: person.voteCount })}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          ) : null}
 
           {session && watched && (pendingPersonId != null || stats.myPersonId) && !setupUnavailable ? (
             <Pressable
@@ -336,25 +358,6 @@ const styles = StyleSheet.create({
   selectedLabel: {
     ...typography.caption,
     color: colors.primary,
-  },
-  rankList: {
-    gap: spacing.xs,
-  },
-  rankRow: {
-    gap: 4,
-  },
-  rankCopy: {
-    gap: 4,
-  },
-  track: {
-    height: 4,
-    borderRadius: radii.full,
-    backgroundColor: colors.border,
-    overflow: 'hidden',
-  },
-  fill: {
-    height: '100%',
-    backgroundColor: colors.primary,
   },
   link: {
     ...typography.label,

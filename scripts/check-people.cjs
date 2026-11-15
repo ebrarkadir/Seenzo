@@ -14,7 +14,7 @@ function loadModules(relativePaths, returned) {
 
 const people = loadModules(
   ['src/services/trakt/normalize.js', 'src/services/trakt/people.js'],
-  'normalizePeoplePayload, pickHeadshotPath, collectEpisodeActors'
+  'normalizePeoplePayload, pickHeadshotPath, collectEpisodeActors, collectMovieActors'
 );
 const crewUi = loadModules(
   ['src/components/people/crewPresentation.js'],
@@ -98,6 +98,9 @@ expect('episode actors dedupe cast over guest', episodeActors.map((item) => item
 expect('episode actors exclude crew', episodeActors.some((item) => item.personId === 33 || item.personId === 44), false);
 expect('guest flag preserved for guests only', episodeActors.find((item) => item.personId === 55).isGuest, true);
 expect('cast overlap stays non-guest', episodeActors.find((item) => item.personId === 22).isGuest, false);
+const movieActors = people.collectMovieActors(normalized);
+expect('movie actors use cast only', movieActors.map((item) => item.personId), [11, 22]);
+expect('movie actors exclude guests list and crew', movieActors.some((item) => item.personId === 55 || item.personId === 33 || item.personId === 44), false);
 
 const stats = votes.normalizeVoteStats([
   { person_trakt_id: 11, vote_count: 3, total_votes: 5, my_person_trakt_id: 11 },

@@ -62,6 +62,16 @@ expect('episode sheet supports watched toggle', episodeSheet.includes('onToggleW
 expect('overflow menu uses a modal', overflow.includes('<Modal'));
 expect('trakt episodes keep overview text', normalize.includes('overview: typeof episode.overview === \'string\' ? episode.overview : \'\''));
 
+const seasonsIndex = showSource.indexOf('seasons.map((seasonNumber)');
+const castIndex = showSource.indexOf('<CastCrewSection mode="show"');
+expect('seasons render before cast and crew', seasonsIndex >= 0 && castIndex > seasonsIndex);
+expect('cast and crew appears once', (showSource.match(/<CastCrewSection mode="show"/g) || []).length === 1);
+expect('seasons start collapsed', showSource.includes('useState({})') && showSource.includes('[expanded, setExpanded]'));
+expect('movie detail is not modified for this layout', !fs.readFileSync(path.join(__dirname, '..', 'src/app/movie/[id].js'), 'utf8').includes('seasons.map((seasonNumber)'));
+expect('show detail shows Trakt community rating', showSource.includes('trakt.communityRating') && showSource.includes('formatCommunityRating'));
+expect('show detail has no TMDB community ratings UI', !showSource.includes('CommunityRatings') && !showSource.includes('tmdbId'));
+expect('episode sheet has no community ratings row', !episodeSheet.includes('CommunityRatings') && !episodeSheet.includes('trakt.communityRating'));
+
 const failed = checks.filter((check) => !check.pass);
 if (failed.length) {
   console.error(JSON.stringify(failed, null, 2));

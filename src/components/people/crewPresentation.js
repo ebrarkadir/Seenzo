@@ -1,5 +1,9 @@
 export const KEY_CREW_LIMIT = 6;
+/** Tighter collapsed crew preview for movie detail / popup. */
+export const MOVIE_KEY_CREW_LIMIT = 3;
 export const DEPT_ACCORDION_THRESHOLD = 12;
+export const CAST_PREVIEW_COUNT = 12;
+export const MOVIE_CAST_PREVIEW_COUNT = 5;
 
 function normalizedJobs(person) {
   return (person?.jobs || []).map((job) => String(job || '').toLowerCase().trim()).filter(Boolean);

@@ -3,3 +3,6 @@
 
 [functions.performance-vote]
 verify_jwt = true
+
+[functions.movie-performance-vote]
+verify_jwt = true

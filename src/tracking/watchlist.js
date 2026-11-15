@@ -200,22 +200,19 @@ export function applyEpisodeRating(prev, episodeId, rating) {
 
 export function applyMovieRating(prev, movieId, rating) {
   const current = prev.movies?.[movieId];
-  const value = clampRating(rating);
-  if (!current && value == null) {
+  // Ratings can only be submitted/edited/removed while watched.
+  // Unwatching preserves any stored rating; it just locks further edits.
+  if (!current?.watched) {
     return prev;
   }
-  if (current && value == null && !current.saved && !current.watched) {
-    const movies = { ...prev.movies };
-    delete movies[movieId];
-    return { ...prev, movies };
-  }
+  const value = clampRating(rating);
   return {
     ...prev,
     movies: {
       ...prev.movies,
       [movieId]: movieEntry({
-        saved: current?.saved ?? false,
-        watched: current?.watched ?? false,
+        saved: current.saved ?? false,
+        watched: true,
         rating: value,
       }),
     },

@@ -348,6 +348,22 @@ expect(
 const unwatched = watchlist.applyMovieChanges(ratedEpisode, 'trakt-movie-9', { watched: false, saved: true });
 expect('mark unwatched returns the movie to the watchlist', watchlist.isMovieWatchlisted(unwatched.movies['trakt-movie-9']), true);
 expect('unwatching a movie keeps its rating', unwatched.movies['trakt-movie-9'].rating, 8);
+expect(
+  'unwatched movie cannot change rating further',
+  watchlist.applyMovieRating(unwatched, 'trakt-movie-9', 9).movies['trakt-movie-9'].rating,
+  8
+);
+expect(
+  'unwatched movie cannot remove rating',
+  watchlist.applyMovieRating(unwatched, 'trakt-movie-9', null).movies['trakt-movie-9'].rating,
+  8
+);
+const planOnlyMovie = { movies: { 'trakt-movie-2': { saved: true, watched: false, rating: null } }, shows: {}, showRatings: {}, episodeRatings: {} };
+expect(
+  'unwatched movie rating submit is rejected',
+  watchlist.applyMovieRating(planOnlyMovie, 'trakt-movie-2', 7).movies['trakt-movie-2'].rating,
+  null
+);
 const removed = watchlist.applyMovieWatchlistToggle(unwatched, 'trakt-movie-9');
 expect('remove watchlist keeps one rated movie record', removed.movies['trakt-movie-9'].saved, false);
 const resumedShow = watchlist.applyShowIntent(

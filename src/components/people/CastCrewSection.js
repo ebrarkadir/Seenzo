@@ -7,13 +7,15 @@ import { fetchEpisodePeople, fetchMoviePeople, fetchShowPeople } from '../../ser
 import { colors, spacing, typography } from '../../theme';
 import PrimaryButton from '../ui/PrimaryButton';
 import {
+  CAST_PREVIEW_COUNT,
   countCrewMembers,
+  KEY_CREW_LIMIT,
+  MOVIE_CAST_PREVIEW_COUNT,
+  MOVIE_KEY_CREW_LIMIT,
   pickKeyCrewMembers,
   shouldAccordionDepartments,
 } from './crewPresentation';
 import PersonAvatar from './PersonAvatar';
-
-const PREVIEW_COUNT = 12;
 
 export default function CastCrewSection(props) {
   const [attempt, setAttempt] = useState(0);
@@ -34,16 +36,25 @@ function CastCrewSectionBody({
   seasonNumber,
   episodeNumber,
   compact = false,
+  parts = 'all',
+  people: peopleProp = null,
+  source: sourceProp = null,
   onRetry,
 }) {
   const { t } = useTranslation();
-  const [people, setPeople] = useState(null);
-  const [source, setSource] = useState(null);
+  const hasPeopleProp = peopleProp != null;
+  const [fetchedPeople, setFetchedPeople] = useState(null);
+  const [fetchedSource, setFetchedSource] = useState(null);
   const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!hasPeopleProp);
   const [showAllCast, setShowAllCast] = useState(false);
+  const showCast = parts === 'all' || parts === 'cast';
+  const showCrew = parts === 'all' || parts === 'crew';
 
   useEffect(() => {
+    if (hasPeopleProp) {
+      return undefined;
+    }
     let active = true;
     const load = async () => {
       if (mode === 'movie') {
@@ -60,8 +71,8 @@ function CastCrewSectionBody({
         if (!active) {
           return;
         }
-        setPeople(result.data);
-        setSource(result.source);
+        setFetchedPeople(result.data);
+        setFetchedSource(result.source);
         setError(null);
         setLoading(false);
       })
@@ -69,21 +80,21 @@ function CastCrewSectionBody({
         if (!active) {
           return;
         }
-        setPeople(null);
-        setSource(null);
+        setFetchedPeople(null);
+        setFetchedSource(null);
         setError(requestError);
         setLoading(false);
       });
     return () => {
       active = false;
     };
-  }, [episodeNumber, mode, seasonNumber, traktMovieId, traktShowId]);
+  }, [episodeNumber, hasPeopleProp, mode, seasonNumber, traktMovieId, traktShowId]);
 
-  if (loading) {
+  if (!hasPeopleProp && loading) {
     return <Text style={styles.meta}>{t('people.loading')}</Text>;
   }
 
-  if (error) {
+  if (!hasPeopleProp && error) {
     return (
       <View style={styles.block}>
         <Text style={styles.meta}>{t('people.error')}</Text>
@@ -92,23 +103,29 @@ function CastCrewSectionBody({
     );
   }
 
+  const people = hasPeopleProp ? peopleProp : fetchedPeople;
+  const source = hasPeopleProp ? (sourceProp || mode) : fetchedSource;
   const cast = people?.cast || [];
   const guests = people?.guestStars || [];
   const departments = people?.departments || [];
-  const visibleCast = showAllCast ? cast : cast.slice(0, PREVIEW_COUNT);
-  const empty = !cast.length && !guests.length && !departments.length;
+  const castPreviewCount = mode === 'movie' ? MOVIE_CAST_PREVIEW_COUNT : CAST_PREVIEW_COUNT;
+  const visibleCast = showAllCast ? cast : cast.slice(0, castPreviewCount);
+  const emptyCast = !cast.length && !guests.length;
+  const emptyCrew = !departments.length;
+  const empty = (showCast ? emptyCast : true) && (showCrew ? emptyCrew : true);
   const collapsibleCrew = mode === 'show' || mode === 'movie';
+  const crewPreviewLimit = mode === 'movie' ? MOVIE_KEY_CREW_LIMIT : KEY_CREW_LIMIT;
 
   if (empty) {
-    return <Text style={styles.meta}>{t('people.empty')}</Text>;
+    return parts === 'all' ? <Text style={styles.meta}>{t('people.empty')}</Text> : null;
   }
 
   return (
     <View style={styles.block}>
-      {source === 'show-fallback' ? (
+      {showCast && source === 'show-fallback' ? (
         <Text style={styles.meta}>{t('people.showFallbackNote')}</Text>
       ) : null}
-      {cast.length ? (
+      {showCast && cast.length ? (
         <View style={styles.group}>
           <Text style={styles.heading}>
             {source === 'show-fallback' ? t('people.showCastFallback') : t('people.cast')}
@@ -127,7 +144,7 @@ function CastCrewSectionBody({
               </View>
             ))}
           </ScrollView>
-          {cast.length > PREVIEW_COUNT ? (
+          {cast.length > castPreviewCount ? (
             <Pressable accessibilityRole="button" onPress={() => setShowAllCast((value) => !value)}>
               <Text style={styles.link}>
                 {showAllCast ? t('people.showLess') : t('people.showAllCast', { count: cast.length })}
@@ -137,7 +154,7 @@ function CastCrewSectionBody({
         </View>
       ) : null}
 
-      {guests.length ? (
+      {showCast && guests.length ? (
         <View style={styles.group}>
           <Text style={styles.heading}>{t('people.guestStars')}</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
@@ -154,11 +171,12 @@ function CastCrewSectionBody({
         </View>
       ) : null}
 
-      {departments.length ? (
+      {showCrew && departments.length ? (
         collapsibleCrew ? (
           <CollapsibleCrewSection
             people={people}
             heading={source === 'show-fallback' ? t('people.showCrewFallback') : t('people.crew')}
+            previewLimit={crewPreviewLimit}
           />
         ) : (
           <View style={styles.group}>
@@ -184,11 +202,11 @@ function CastCrewSectionBody({
   );
 }
 
-function CollapsibleCrewSection({ people, heading }) {
+function CollapsibleCrewSection({ people, heading, previewLimit = KEY_CREW_LIMIT }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const [openDepartments, setOpenDepartments] = useState(() => new Set());
-  const keyMembers = pickKeyCrewMembers(people);
+  const keyMembers = pickKeyCrewMembers(people, previewLimit);
   const totalCrew = countCrewMembers(people);
   const remaining = Math.max(totalCrew - keyMembers.length, 0);
   const useAccordion = shouldAccordionDepartments(people);

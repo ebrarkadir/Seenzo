@@ -29,6 +29,13 @@ import {
   listShowSeasons,
 } from '../../tracking/status';
 
+function formatCommunityRating(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null;
+  }
+  return Number(value.toFixed(1));
+}
+
 export default function ShowDetailScreen() {
   const { id } = useLocalSearchParams();
   const showId = Array.isArray(id) ? id[0] : id;
@@ -150,6 +157,7 @@ export default function ShowDetailScreen() {
   const progress = getProgress(show, entry);
   const allReleasedWatched = progress.total > 0 && progress.watched === progress.total;
   const watched = new Set(entry?.watchedEpisodeIds || []);
+  const communityRating = formatCommunityRating(show.communityRating);
   const overflowOptions = [];
   if (!entry) {
     overflowOptions.push({
@@ -203,9 +211,9 @@ export default function ShowDetailScreen() {
               {show.releaseStatus ? t(`tv.release.${show.releaseStatus}`) : t('trakt.unavailable')}
             </Text>
             <Text style={styles.meta}>
-              {show.communityRating == null
+              {communityRating == null
                 ? t('trakt.unavailable')
-                : t('trakt.communityRating', { rating: show.communityRating })}
+                : t('trakt.communityRating', { rating: communityRating })}
             </Text>
             {status ? <StatusBadge status={status} /> : <Text style={styles.meta}>{t('tv.notTracking')}</Text>}
             <Text style={styles.meta}>
@@ -263,14 +271,6 @@ export default function ShowDetailScreen() {
         </View>
         <Text style={styles.body}>{mediaSynopsis(t, show) || t('trakt.unavailable')}</Text>
         {remoteLoading ? <Text style={styles.meta}>{t('trakt.loading')}</Text> : null}
-        {traktId ? (
-          <View style={styles.peopleBlock}>
-            <Text style={styles.peopleHeading}>{t('people.showCastCrew')}</Text>
-            <CastCrewSection mode="show" traktShowId={traktId} />
-          </View>
-        ) : (
-          <Text style={styles.meta}>{t('people.unavailableForDemo')}</Text>
-        )}
         {seasons.map((seasonNumber) => {
           const open = Boolean(expanded[seasonNumber]);
           const seasonProgress = getSeasonProgress(show, entry, seasonNumber);
@@ -402,6 +402,14 @@ export default function ShowDetailScreen() {
           );
         })}
         <Text style={styles.note}>{t('tv.unreleasedNote')}</Text>
+        {traktId ? (
+          <View style={styles.peopleBlock}>
+            <Text style={styles.peopleHeading}>{t('people.showCastCrew')}</Text>
+            <CastCrewSection mode="show" traktShowId={traktId} />
+          </View>
+        ) : (
+          <Text style={styles.meta}>{t('people.unavailableForDemo')}</Text>
+        )}
       </ScrollView>
       <UndoBar bottom={16} />
       <ShowOverflowMenu

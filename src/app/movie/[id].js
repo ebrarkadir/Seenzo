@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useNavigation } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 
-import CastCrewSection from '../../components/people/CastCrewSection';
+import MoviePeopleSections from '../../components/people/MoviePeopleSections';
 import ShowOverflowMenu from '../../components/tracking/ShowOverflowMenu';
 import PosterThumb from '../../components/ui/PosterThumb';
 import RateChip from '../../components/ui/RateChip';
@@ -187,7 +187,11 @@ export default function MovieDetailScreen() {
               <RateChip
                 label={movieRating != null ? t('common.ratingValue', { rating: movieRating }) : t('rating.rate')}
                 accessibilityLabel={t('rating.movie')}
+                disabled={!watched}
                 onPress={() => {
+                  if (!watched) {
+                    return;
+                  }
                   setDraft(movieRating);
                   setRatingOpen(true);
                 }}
@@ -202,20 +206,16 @@ export default function MovieDetailScreen() {
                 <Ionicons name="ellipsis-vertical" size={20} color={colors.text} />
               </Pressable>
             </View>
+            {!watched ? (
+              <Text style={styles.meta}>{t('rating.watchToRateMovie')}</Text>
+            ) : null}
           </View>
         </View>
 
         <Text style={styles.body}>{mediaSynopsis(t, movie) || t('trakt.unavailable')}</Text>
         {remoteLoading ? <Text style={styles.meta}>{t('trakt.loading')}</Text> : null}
 
-        {traktId ? (
-          <View style={styles.peopleBlock}>
-            <Text style={styles.peopleHeading}>{t('people.showCastCrew')}</Text>
-            <CastCrewSection mode="movie" traktMovieId={traktId} />
-          </View>
-        ) : (
-          <Text style={styles.meta}>{t('people.unavailableForDemo')}</Text>
-        )}
+        <MoviePeopleSections traktMovieId={traktId} watched={watched} />
       </ScrollView>
 
       <ShowOverflowMenu
@@ -224,20 +224,23 @@ export default function MovieDetailScreen() {
         onClose={() => setMenuOpen(false)}
       />
       <RatingSheet
-        visible={ratingOpen}
+        visible={ratingOpen && watched}
         title={t('rating.movie')}
         value={draft}
         savedValue={movieRating}
         onChange={setDraft}
         onClose={() => setRatingOpen(false)}
         onSave={() => {
-          if (draft == null) {
+          if (!watched || draft == null) {
             return;
           }
           setMovieRating(movie.id, draft);
           setRatingOpen(false);
         }}
         onRemove={() => {
+          if (!watched) {
+            return;
+          }
           setMovieRating(movie.id, null);
           setRatingOpen(false);
         }}
@@ -320,12 +323,5 @@ const styles = StyleSheet.create({
   meta: {
     ...typography.caption,
     color: colors.textSecondary,
-  },
-  peopleBlock: {
-    gap: spacing.sm,
-  },
-  peopleHeading: {
-    ...typography.subtitle,
-    color: colors.text,
   },
 });
