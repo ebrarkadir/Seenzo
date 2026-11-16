@@ -19,6 +19,8 @@ const peopleSections = fs.readFileSync(path.join(__dirname, '..', 'src/component
 const castCrew = fs.readFileSync(path.join(__dirname, '..', 'src/components/people/CastCrewSection.js'), 'utf8');
 const people = fs.readFileSync(path.join(__dirname, '..', 'src/services/trakt/people.js'), 'utf8');
 const showSource = fs.readFileSync(path.join(__dirname, '..', 'src/app/show/[id].js'), 'utf8');
+const libraryTiles = fs.readFileSync(path.join(__dirname, '..', 'src/components/media/LibraryTiles.js'), 'utf8');
+const posterTile = fs.readFileSync(path.join(__dirname, '..', 'src/components/media/PosterTile.js'), 'utf8');
 const en = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src/i18n/locales/en.json'), 'utf8'));
 const crewUi = loadModules(
   ['src/components/people/crewPresentation.js'],
@@ -56,6 +58,12 @@ expect('movie detail shows watch-to-rate copy', movieSource.includes('rating.wat
 expect('movie detail gates rating sheet on watched', movieSource.includes('visible={ratingOpen && watched}'));
 expect('movies tab captures id before mark watched', moviesTab.includes('markWatchedAndOpen'));
 expect('movies tab opens movie detail sheet', moviesTab.includes('<MovieDetailSheet'));
+expect('to-watch cards show labeled mark watched overlay', libraryTiles.includes("t('movies.markWatched')") && libraryTiles.includes('bottomOverlay') && libraryTiles.includes('styles.markWatched'));
+expect('mark watched overlay sits inside poster frame', posterTile.includes('bottomOverlaySlot') && posterTile.includes("bottom: 0"));
+expect('mark watched uses solid Seenzo blue', libraryTiles.includes('backgroundColor: colors.primary') && !libraryTiles.includes('rgba('));
+expect('mark watched uses dark on-primary text', libraryTiles.includes('color: colors.onPrimary') && libraryTiles.includes("fontWeight: '700'"));
+expect('to-watch cards have no below-poster mark watched margin', !libraryTiles.includes('marginTop: spacing.sm,\n    minHeight: 32'));
+expect('to-watch cards have no standalone quick checkmark', !libraryTiles.includes('onQuick') && !posterTile.includes('onQuick'));
 expect('movie sheet uses Android back close', sheet.includes('onRequestClose={closeSheet}'));
 expect('movie sheet has close button', sheet.includes('movies.closeMovie'));
 expect('movie sheet includes rate chip', sheet.includes('<RateChip'));

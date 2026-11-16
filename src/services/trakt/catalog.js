@@ -1,5 +1,6 @@
 import { traktGet } from './client';
-import { movieFromSearch, seasonNeedsEpisodeFetch, showFromSearch, toAppMovie, toAppShow } from './normalize';
+import { rememberCachedEpisodeOverview } from './episodes';
+import { movieFromSearch, normalizeEpisodeOverview, seasonNeedsEpisodeFetch, showFromSearch, toAppMovie, toAppShow } from './normalize';
 
 const PAGE_SIZE = 20;
 const memory = new Map();
@@ -86,7 +87,19 @@ async function hydrateShowNow(traktId) {
       filled.push({ ...season, episodes: [] });
     }
   }
-  return toAppShow(summary.data, filled, true);
+  const show = toAppShow(summary.data, filled, true);
+  if (show?.traktId && Array.isArray(show.seasons)) {
+    show.seasons.forEach((season) => {
+      (season?.episodes || []).forEach((episode) => {
+        const overview = normalizeEpisodeOverview(episode?.overview);
+        if (!overview || typeof episode?.number !== 'number') {
+          return;
+        }
+        rememberCachedEpisodeOverview(show.traktId, season.season, episode.number, overview);
+      });
+    });
+  }
+  return show;
 }
 
 export function hydrateShow(traktId) {

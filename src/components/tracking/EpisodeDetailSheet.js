@@ -1,10 +1,17 @@
+import { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
-import { episodeTitle, mediaSynopsis } from '../../data/labels';
-import { parseTraktShowKey } from '../../services/trakt/normalize';
+import { episodeTitle } from '../../data/labels';
+import { patchEpisodeOverview } from '../../data/mediaLibrary';
+import {
+  fetchEpisodeOverview,
+  readCachedEpisodeOverview,
+  rememberCachedEpisodeOverview,
+} from '../../services/trakt/episodes';
+import { normalizeEpisodeOverview, parseTraktShowKey } from '../../services/trakt/normalize';
 import { colors, radii, spacing, typography } from '../../theme';
 import { episodeCode, isReleased } from '../../tracking/status';
 import EpisodeActorsBlock from '../people/EpisodeActorsBlock';
@@ -22,22 +29,89 @@ export default function EpisodeDetailSheet({
   onToggleWatched,
   onRate,
 }) {
-  const { t } = useTranslation();
-  const insets = useSafeAreaInsets();
-  const traktShowId = parseTraktShowKey(show?.id) || show?.traktId || null;
-
   if (!episode) {
     return null;
   }
 
+  return (
+    <EpisodeDetailSheetBody
+      key={`${show?.id || 'show'}-${episode.id}-${visible ? 'open' : 'closed'}`}
+      visible={visible}
+      show={show}
+      episode={episode}
+      watched={watched}
+      rating={rating}
+      onClose={onClose}
+      onToggleWatched={onToggleWatched}
+      onRate={onRate}
+    />
+  );
+}
+
+function EpisodeDetailSheetBody({
+  visible,
+  show,
+  episode,
+  watched,
+  rating,
+  onClose,
+  onToggleWatched,
+  onRate,
+}) {
+  const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
+  const traktShowId = parseTraktShowKey(show?.id) || show?.traktId || null;
+  const seasonNumber = typeof episode.season === 'number' ? episode.season : null;
+  const episodeNumber = typeof episode.number === 'number' ? episode.number : null;
+  const localOverview = normalizeEpisodeOverview(episode.overview);
+  const cachedOverview = traktShowId != null && seasonNumber != null && episodeNumber != null
+    ? readCachedEpisodeOverview(traktShowId, seasonNumber, episodeNumber) || ''
+    : '';
+  const seedOverview = localOverview || cachedOverview;
+  const canFetch = Boolean(traktShowId && seasonNumber != null && episodeNumber != null);
+  const [overview, setOverview] = useState(seedOverview);
+  const [loadingOverview, setLoadingOverview] = useState(!seedOverview && canFetch && visible);
+
+  useEffect(() => {
+    if (!visible || seedOverview || !canFetch) {
+      return undefined;
+    }
+    let active = true;
+    fetchEpisodeOverview(traktShowId, seasonNumber, episodeNumber)
+      .then((text) => {
+        if (!active) {
+          return;
+        }
+        const next = normalizeEpisodeOverview(text);
+        setOverview(next);
+        if (next) {
+          rememberCachedEpisodeOverview(traktShowId, seasonNumber, episodeNumber, next);
+          if (show?.id) {
+            patchEpisodeOverview(show.id, seasonNumber, episodeNumber, next);
+          }
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setLoadingOverview(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [canFetch, episodeNumber, seasonNumber, seedOverview, show?.id, traktShowId, visible]);
+
   const released = isReleased(episode);
   const code = t('common.episodeCode', episodeCode(episode));
   const title = episodeTitle(t, episode) || t('trakt.unavailable');
-  const synopsis = mediaSynopsis(t, episode);
   const posterPath = episode.posterPath || show?.posterPath;
   const posterUri = episode.poster || show?.poster;
   const canRate = released && watched;
   const rateLabel = rating != null ? t('common.ratingValue', { rating }) : t('rating.rate');
+  const synopsis = normalizeEpisodeOverview(overview);
+  const synopsisText = loadingOverview
+    ? t('trakt.loading')
+    : synopsis || t('tv.noEpisodeOverview');
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -90,7 +164,7 @@ export default function EpisodeDetailSheet({
               </View>
             </View>
             <Text style={styles.section}>{t('trakt.overview')}</Text>
-            <Text style={styles.body}>{synopsis || t('trakt.unavailable')}</Text>
+            <Text style={styles.body}>{synopsisText}</Text>
             {released ? (
               <PrimaryButton
                 label={t(watched ? 'tv.markUnwatched' : 'tv.markWatched')}

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { router } from 'expo-router';
 
@@ -23,6 +23,13 @@ import {
 import { colors, radii, spacing, typography } from '../../theme';
 import PrimaryButton from '../ui/PrimaryButton';
 import PersonAvatar from './PersonAvatar';
+import {
+  PERFORMANCE_CARD_GAP,
+  PERFORMANCE_CARD_WIDTH,
+  findPerformanceActorIndex,
+  performanceCardLayout,
+  shouldScrollToVotedActor,
+} from './performanceVoteCarousel';
 
 export default function PerformanceVoteSection(props) {
   const mode = props.mode === 'movie' ? 'movie' : 'episode';
@@ -60,18 +67,22 @@ function PerformanceVoteBody({
   const [error, setError] = useState(null);
   const [setupUnavailable, setSetupUnavailable] = useState(false);
   const requestSeq = useRef(0);
+  const loadSeq = useRef(0);
+  const listRef = useRef(null);
+  const pendingScrollPersonId = useRef(null);
 
   useEffect(() => {
     if (!ready) {
       return undefined;
     }
-    let active = true;
+    const seq = loadSeq.current + 1;
+    loadSeq.current = seq;
     const load = isMovie
       ? fetchMoviePerformanceVoteStats(traktMovieId)
       : fetchPerformanceVoteStats(traktShowId, seasonNumber, episodeNumber);
     load
       .then((next) => {
-        if (!active) {
+        if (loadSeq.current !== seq) {
           return;
         }
         setStats(next);
@@ -80,7 +91,7 @@ function PerformanceVoteBody({
         setLoading(false);
       })
       .catch((requestError) => {
-        if (!active) {
+        if (loadSeq.current !== seq) {
           return;
         }
         const unavailable = isMovie
@@ -91,9 +102,7 @@ function PerformanceVoteBody({
         setStats(isMovie ? emptyMovieVoteStats() : emptyVoteStats());
         setLoading(false);
       });
-    return () => {
-      active = false;
-    };
+    return undefined;
   }, [episodeNumber, isMovie, ready, seasonNumber, traktMovieId, traktShowId]);
 
   const confirmedRanked = useMemo(() => {
@@ -113,6 +122,37 @@ function PerformanceVoteBody({
     })),
     [confirmedRanked, pendingPersonId]
   );
+
+  useLayoutEffect(() => {
+    const targetId = pendingScrollPersonId.current;
+    if (targetId == null || saving || loading) {
+      return undefined;
+    }
+    const index = findPerformanceActorIndex(ranked, targetId);
+    if (index < 0) {
+      pendingScrollPersonId.current = null;
+      return undefined;
+    }
+    const frame = requestAnimationFrame(() => {
+      if (pendingScrollPersonId.current !== targetId || !listRef.current) {
+        return;
+      }
+      pendingScrollPersonId.current = null;
+      try {
+        listRef.current.scrollToIndex({
+          index,
+          animated: true,
+          viewPosition: 0,
+        });
+      } catch {
+        listRef.current.scrollToOffset({
+          offset: performanceCardLayout(index).offset,
+          animated: true,
+        });
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [loading, ranked, saving, stats]);
 
   const vote = async (personId) => {
     if (setupUnavailable) {
@@ -135,6 +175,7 @@ function PerformanceVoteBody({
     requestSeq.current = seq;
     const previousStats = stats;
 
+    pendingScrollPersonId.current = null;
     setPendingPersonId(nextPending);
     setSaving(true);
     setError(null);
@@ -162,6 +203,14 @@ function PerformanceVoteBody({
       if (requestSeq.current !== seq) {
         return;
       }
+      if (shouldScrollToVotedActor({
+        clearing,
+        personId,
+        requestCurrent: requestSeq.current,
+        requestSeq: seq,
+      })) {
+        pendingScrollPersonId.current = personId;
+      }
       setStats(next);
       setPendingPersonId(null);
       setSetupUnavailable(false);
@@ -169,6 +218,7 @@ function PerformanceVoteBody({
       if (requestSeq.current !== seq) {
         return;
       }
+      pendingScrollPersonId.current = null;
       setPendingPersonId(null);
       setStats(previousStats);
       const unavailable = isMovie
@@ -242,16 +292,25 @@ function PerformanceVoteBody({
         <Text style={styles.meta}>{t(noCandidatesKey)}</Text>
       ) : (
         <>
-          <ScrollView
+          <FlatList
+            ref={listRef}
             horizontal
+            data={ranked}
+            keyExtractor={(person) => `vote-card-${person.personId}`}
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.cards}
-          >
-            {ranked.map((person) => {
+            ItemSeparatorComponent={CardGap}
+            getItemLayout={(_, index) => performanceCardLayout(index)}
+            onScrollToIndexFailed={(info) => {
+              listRef.current?.scrollToOffset({
+                offset: performanceCardLayout(info.index).offset,
+                animated: true,
+              });
+            }}
+            renderItem={({ item: person }) => {
               const canInteract = Boolean(session) && watched && !setupUnavailable && !saving;
               return (
                 <Pressable
-                  key={`vote-card-${person.personId}`}
                   accessibilityRole="button"
                   accessibilityState={{
                     selected: person.selected,
@@ -286,8 +345,8 @@ function PerformanceVoteBody({
                   ) : null}
                 </Pressable>
               );
-            })}
-          </ScrollView>
+            }}
+          />
 
           {session && watched && (pendingPersonId != null || stats.myPersonId) && !setupUnavailable ? (
             <Pressable
@@ -302,6 +361,10 @@ function PerformanceVoteBody({
       )}
     </View>
   );
+}
+
+function CardGap() {
+  return <View style={styles.cardGap} />;
 }
 
 const styles = StyleSheet.create({
@@ -325,11 +388,13 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   cards: {
-    gap: spacing.sm,
     paddingVertical: spacing.xs,
   },
+  cardGap: {
+    width: PERFORMANCE_CARD_GAP,
+  },
   card: {
-    width: 96,
+    width: PERFORMANCE_CARD_WIDTH,
     gap: 4,
     padding: spacing.xs,
     borderRadius: radii.md,

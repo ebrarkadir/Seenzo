@@ -1,29 +1,74 @@
-import { useMemo } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { useMemo, useState } from 'react';
+import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 
 import { useAuth } from '../../auth/AuthContext';
+import FavoritePickerModal from '../../components/profile/FavoritePickerModal';
+import FavoriteShelf from '../../components/profile/FavoriteShelf';
+import ProfileActivitySection from '../../components/profile/ProfileActivitySection';
+import ProfileHeader from '../../components/profile/ProfileHeader';
 import PrimaryButton from '../../components/ui/PrimaryButton';
+import { useProfile } from '../../profile/ProfileContext';
 import { colors, radii, spacing, typography } from '../../theme';
+import { countPersonalRatings } from '../../tracking/personalRatings';
+import { isMovieWatchlisted } from '../../tracking/watchlist';
 import { useTracking } from '../../tracking/TrackingContext';
 
 export default function ProfileScreen() {
   const { t } = useTranslation();
   const { ready: authReady, email, signOut } = useAuth();
-  const { shows, movies, demoMode, loadDemo, clearLocalData, restartOnboarding, syncStatus } = useTracking();
-  const signedIn = Boolean(email);
+  const {
+    userId,
+    profile,
+    favorites,
+    loading,
+    saving,
+    setupUnavailable,
+    setFavoriteAt,
+    clearFavoriteAt,
+    moveFavorite,
+  } = useProfile();
+  const {
+    shows,
+    movies,
+    showRatings,
+    episodeRatings,
+    demoMode,
+    loadDemo,
+    clearLocalData,
+    restartOnboarding,
+    syncStatus,
+  } = useTracking();
+  const signedIn = Boolean(userId);
+  const [editShows, setEditShows] = useState(false);
+  const [editMovies, setEditMovies] = useState(false);
+  const [picker, setPicker] = useState(null);
 
   const stats = useMemo(() => {
-    const showCount = Object.keys(shows).length;
-    const movieCount = Object.values(movies).filter((entry) => entry.watched).length;
-    const episodeCount = Object.values(shows).reduce(
+    if (signedIn && demoMode) {
+      return {
+        moviesWatched: 0,
+        episodesWatched: 0,
+        ratingsCount: 0,
+        showsCount: 0,
+        moviesToWatch: 0,
+      };
+    }
+    const moviesWatched = Object.values(movies).filter((entry) => entry.watched).length;
+    const moviesToWatch = Object.values(movies).filter((entry) => isMovieWatchlisted(entry)).length;
+    const episodesWatched = Object.values(shows).reduce(
       (sum, entry) => sum + (entry.watchedEpisodeIds || []).length,
       0
     );
-    return { showCount, movieCount, episodeCount };
-  }, [movies, shows]);
+    return {
+      moviesWatched,
+      moviesToWatch,
+      episodesWatched,
+      showsCount: Object.keys(shows).length,
+      ratingsCount: countPersonalRatings({ movies, shows, showRatings, episodeRatings }),
+    };
+  }, [demoMode, episodeRatings, movies, showRatings, shows, signedIn]);
 
   const confirm = (title, message, onConfirm) => {
     Alert.alert(title, message, [
@@ -32,58 +77,132 @@ export default function ProfileScreen() {
     ]);
   };
 
+  const openPicker = (mediaType, position) => {
+    if (!signedIn) {
+      router.push('/sign-in');
+      return;
+    }
+    if (setupUnavailable) {
+      Alert.alert(t('profile.favoritesUnavailableTitle'), t('profile.favoritesUnavailableBody'));
+      return;
+    }
+    setPicker({ mediaType, position });
+  };
+
+  const onSelectFavorite = async (media) => {
+    if (!picker) {
+      return;
+    }
+    try {
+      await setFavoriteAt(picker.mediaType, media.id, picker.position);
+      setPicker(null);
+    } catch (error) {
+      Alert.alert(t('profile.favoritesErrorTitle'), t(`profile.errors.${error.code}`, { defaultValue: t('profile.errors.generic') }));
+    }
+  };
+
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <View style={styles.identity}>
-        <View style={styles.avatar}>
-          <Ionicons name="person" size={28} color={colors.primary} />
-        </View>
-        <View style={styles.identityCopy}>
-          <Text style={styles.name}>{signedIn ? email : t('profile.guestTitle')}</Text>
-          <Text style={styles.note}>{signedIn ? t('profile.localNote') : t('profile.guestBody')}</Text>
-        </View>
-      </View>
+      <ProfileHeader
+        guest={!signedIn}
+        profile={profile}
+        onEdit={() => router.push('/edit-profile')}
+        onPressAvatar={() => router.push('/edit-profile')}
+        onPressBanner={() => router.push('/edit-profile')}
+      />
+
       {authReady && !signedIn ? (
-        <View style={styles.actions}>
+        <View style={styles.sectionPad}>
           <PrimaryButton label={t('profile.signIn')} onPress={() => router.push('/sign-in')} />
           <PrimaryButton label={t('profile.createAccount')} variant="secondary" onPress={() => router.push('/sign-up')} />
         </View>
       ) : null}
-      {signedIn ? (
-        <View style={styles.panel}>
-          <Text style={styles.kicker}>{t('profile.account')}</Text>
-          <Text style={styles.panelBody}>{email}</Text>
-          <Text style={styles.panelBody}>
-            {t(syncStatus === 'saving' ? 'profile.syncSaving' : syncStatus === 'error' ? 'sync.error' : 'profile.syncSaved')}
-          </Text>
-          <PrimaryButton
-            label={t('profile.logout')}
-            variant="secondary"
-            onPress={() => confirm(t('profile.logoutTitle'), t('profile.logoutMessage'), () => {
-              signOut();
-            })}
-          />
-        </View>
+
+      {loading ? <Text style={styles.metaPad}>{t('profile.loading')}</Text> : null}
+
+      <ProfileActivitySection
+        showsCount={stats.showsCount}
+        episodesWatched={stats.episodesWatched}
+        moviesWatched={stats.moviesWatched}
+        moviesToWatch={stats.moviesToWatch}
+        ratingsCount={stats.ratingsCount}
+        onPressShows={() => router.push('/archive/shows')}
+        onPressMovies={() => router.push('/archive/movies')}
+        onPressRatings={() => router.push('/personal-ratings')}
+      />
+
+      <FavoriteShelf
+        title={t('profile.favoriteShows')}
+        mediaType="show"
+        items={favorites.shows}
+        editing={editShows}
+        onToggleEdit={() => {
+          if (!signedIn) {
+            router.push('/sign-in');
+            return;
+          }
+          setEditShows((value) => !value);
+        }}
+        onPressEmpty={(position) => openPicker('show', position)}
+        onPressFilled={(item) => router.push(`/show/${item.mediaId}`)}
+        onRemove={(position) => clearFavoriteAt('show', position)}
+        onMoveLeft={(position) => moveFavorite('show', position, position - 1)}
+        onMoveRight={(position) => moveFavorite('show', position, position + 1)}
+      />
+
+      <FavoriteShelf
+        title={t('profile.favoriteMovies')}
+        mediaType="movie"
+        items={favorites.movies}
+        editing={editMovies}
+        onToggleEdit={() => {
+          if (!signedIn) {
+            router.push('/sign-in');
+            return;
+          }
+          setEditMovies((value) => !value);
+        }}
+        onPressEmpty={(position) => openPicker('movie', position)}
+        onPressFilled={(item) => router.push(`/movie/${item.mediaId}`)}
+        onRemove={(position) => clearFavoriteAt('movie', position)}
+        onMoveLeft={(position) => moveFavorite('movie', position, position - 1)}
+        onMoveRight={(position) => moveFavorite('movie', position, position + 1)}
+      />
+
+      {setupUnavailable && signedIn ? (
+        <Text style={styles.metaPad}>{t('profile.favoritesUnavailableBody')}</Text>
       ) : null}
-      <View style={styles.stats}>
-        <Stat value={stats.showCount} label={t('profile.statShows')} />
-        <Stat value={stats.movieCount} label={t('profile.statMovies')} />
-        <Stat value={stats.episodeCount} label={t('profile.statEpisodes')} />
-      </View>
-      <Pressable accessibilityRole="button" style={styles.link} onPress={() => router.push('/archive/shows')}>
-        <Text style={styles.linkTitle}>{t('profile.myShows')}</Text>
-        <Text style={styles.linkMeta}>{t('profile.myShowsMeta', { count: Object.keys(shows).length })}</Text>
-      </Pressable>
-      <Pressable accessibilityRole="button" style={styles.link} onPress={() => router.push('/archive/movies')}>
-        <Text style={styles.linkTitle}>{t('profile.watchedMovies')}</Text>
-        <Text style={styles.linkMeta}>{t('profile.watchedMoviesMeta', { count: stats.movieCount })}</Text>
-      </Pressable>
+      {saving ? <Text style={styles.metaPad}>{t('profile.saving')}</Text> : null}
+
       <View style={styles.panel}>
+        {signedIn ? (
+          <>
+            <Text style={styles.kicker}>{t('profile.accountSettings')}</Text>
+            <Text style={styles.panelBody}>{email}</Text>
+            <Text style={styles.panelBody}>
+              {t(syncStatus === 'saving' ? 'profile.syncSaving' : syncStatus === 'error' ? 'sync.error' : 'profile.syncSaved')}
+            </Text>
+            <PrimaryButton
+              label={t('profile.editProfile')}
+              variant="secondary"
+              onPress={() => router.push('/edit-profile')}
+            />
+            <PrimaryButton
+              label={t('profile.logout')}
+              variant="secondary"
+              onPress={() => confirm(t('profile.logoutTitle'), t('profile.logoutMessage'), () => {
+                signOut();
+              })}
+            />
+          </>
+        ) : null}
+
+        <Text style={styles.kicker}>{t('profile.creditsKicker')}</Text>
+        <Text style={styles.panelBody}>{t('profile.traktAttribution')}</Text>
+
         <Text style={styles.kicker}>{t('profile.demoKicker')}</Text>
         <Text style={styles.panelTitle}>{t('profile.demoTitle')}</Text>
         <Text style={styles.panelBody}>{t('profile.demoNote')}</Text>
-        <Text style={styles.kicker}>{t('profile.creditsKicker')}</Text>
-        <Text style={styles.panelBody}>{t('profile.traktAttribution')}</Text>
         <Text style={styles.mode}>{demoMode ? t('profile.demoOn') : t('profile.demoOff')}</Text>
         <PrimaryButton
           label={t('profile.loadDemo')}
@@ -111,16 +230,15 @@ export default function ProfileScreen() {
           onPress={() => router.push('/trakt-test')}
         />
       </View>
-    </ScrollView>
-  );
-}
 
-function Stat({ value, label }) {
-  return (
-    <View style={styles.stat}>
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
-    </View>
+      <FavoritePickerModal
+        visible={Boolean(picker)}
+        mediaType={picker?.mediaType || 'show'}
+        selectedIds={(picker?.mediaType === 'movie' ? favorites.movies : favorites.shows).map((item) => item.mediaId)}
+        onClose={() => setPicker(null)}
+        onSelect={onSelectFavorite}
+      />
+    </ScrollView>
   );
 }
 
@@ -130,80 +248,20 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   content: {
-    padding: spacing.md,
     gap: spacing.md,
     paddingBottom: spacing.xl,
   },
-  identity: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  avatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  identityCopy: {
-    flex: 1,
-    gap: 4,
-  },
-  actions: {
+  sectionPad: {
+    paddingHorizontal: spacing.md,
     gap: spacing.sm,
   },
-  name: {
-    ...typography.title,
-    color: colors.text,
-  },
-  note: {
+  metaPad: {
     ...typography.caption,
     color: colors.textSecondary,
-  },
-  stats: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  stat: {
-    flex: 1,
-    padding: spacing.sm,
-    borderRadius: radii.lg,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    gap: 2,
-  },
-  statValue: {
-    ...typography.subtitle,
-    color: colors.text,
-  },
-  statLabel: {
-    ...typography.label,
-    color: colors.textSecondary,
-    fontWeight: '500',
-  },
-  link: {
-    padding: spacing.md,
-    borderRadius: radii.lg,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    gap: 4,
-  },
-  linkTitle: {
-    ...typography.body,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  linkMeta: {
-    ...typography.caption,
-    color: colors.textSecondary,
+    paddingHorizontal: spacing.md,
   },
   panel: {
+    marginHorizontal: spacing.md,
     padding: spacing.md,
     borderRadius: radii.lg,
     backgroundColor: colors.surface,

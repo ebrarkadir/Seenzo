@@ -90,13 +90,21 @@ const show = normalize.toAppShow(
   },
   [{
     number: 1,
-    episodes: [{ season: 1, number: 1, title: 'Pilot', ids: { trakt: 7 }, first_aired: '2010-01-02T00:00:00.000Z' }],
+    episodes: [{
+      season: 1,
+      number: 1,
+      title: 'Pilot',
+      overview: '  Pilot summary.  ',
+      ids: { trakt: 7 },
+      first_aired: '2010-01-02T00:00:00.000Z',
+    }],
   }],
   true
 );
 expect('show id is provider qualified', show.id, 'trakt-show-42');
 expect('thumb poster is preferred', show.posterPath.endsWith('/thumb/b.webp'), true);
 expect('episode air date is the calendar date', show.seasons[0].episodes[0].airDate, '2010-01-02');
+expect('episode overview is trimmed and kept', show.seasons[0].episodes[0].overview, 'Pilot summary.');
 expect('missing air date stays empty', normalize.airDateFromTrakt(null), null);
 expect('impossible air date stays empty', normalize.airDateFromTrakt('2026-13-40T00:00:00.000Z'), null);
 expect('season without episodes needs a fetch', normalize.seasonNeedsEpisodeFetch({ number: 2, episodes: [] }), true);

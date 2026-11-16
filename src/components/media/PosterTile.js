@@ -25,16 +25,21 @@ export default function PosterTile({
   onPress,
   accessibilityLabel,
   accessibilityState,
-  quickLabel,
-  onQuick,
   watchlisted,
   onBookmark,
   bookmarkLabel,
+  bottomOverlay = null,
 }) {
   return (
     <View style={{ width }}>
-      <Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel || title} accessibilityState={accessibilityState} onPress={onPress}>
-        <View>
+      <View style={[styles.posterFrame, { width, height }]}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={accessibilityLabel || title}
+          accessibilityState={accessibilityState}
+          onPress={onPress}
+          style={styles.posterPress}
+        >
           <Artwork uri={uri} posterPath={posterPath} width={width} height={height} />
           {status ? <View style={[styles.indicator, { backgroundColor: colors.status[status] || colors.textMuted }]} /> : null}
           {selected || selectable ? (
@@ -47,7 +52,19 @@ export default function PosterTile({
               <Text style={styles.badgeText}>{badge}</Text>
             </View>
           ) : null}
-        </View>
+        </Pressable>
+        {bottomOverlay ? (
+          <View pointerEvents="box-none" style={styles.bottomOverlaySlot}>
+            {bottomOverlay}
+          </View>
+        ) : null}
+      </View>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel || title}
+        accessibilityState={accessibilityState}
+        onPress={onPress}
+      >
         <Text style={styles.title} numberOfLines={2}>
           {title}
         </Text>
@@ -60,22 +77,21 @@ export default function PosterTile({
       {onBookmark ? (
         <BookmarkButton active={watchlisted} label={bookmarkLabel} onPress={onBookmark} style={styles.bookmark} />
       ) : null}
-      {onQuick ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={quickLabel}
-          onPress={onQuick}
-          hitSlop={8}
-          style={styles.quick}
-        >
-          <Ionicons name="checkmark" size={16} color={colors.onPrimary} />
-        </Pressable>
-      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  posterFrame: {
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: radii.md,
+    backgroundColor: colors.surfaceElevated,
+  },
+  posterPress: {
+    width: '100%',
+    height: '100%',
+  },
   image: {
     borderRadius: radii.md,
     backgroundColor: colors.surfaceElevated,
@@ -127,20 +143,15 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.text,
   },
+  bottomOverlaySlot: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
   bookmark: {
     position: 'absolute',
     top: spacing.sm,
     right: spacing.sm,
-  },
-  quick: {
-    position: 'absolute',
-    top: spacing.sm,
-    left: spacing.sm,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primary,
   },
 });

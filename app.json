@@ -32,7 +32,13 @@
           ]
         }
       ],
-      "expo-font"
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Seenzo to access your photos to set a profile avatar and banner."
+        }
+      ]
     ]
   }
 }

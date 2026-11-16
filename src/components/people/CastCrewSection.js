@@ -38,13 +38,11 @@ function CastCrewSectionBody({
   compact = false,
   parts = 'all',
   people: peopleProp = null,
-  source: sourceProp = null,
   onRetry,
 }) {
   const { t } = useTranslation();
   const hasPeopleProp = peopleProp != null;
   const [fetchedPeople, setFetchedPeople] = useState(null);
-  const [fetchedSource, setFetchedSource] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(!hasPeopleProp);
   const [showAllCast, setShowAllCast] = useState(false);
@@ -58,21 +56,20 @@ function CastCrewSectionBody({
     let active = true;
     const load = async () => {
       if (mode === 'movie') {
-        return { data: await fetchMoviePeople(traktMovieId), source: 'movie' };
+        return fetchMoviePeople(traktMovieId);
       }
+      // Episode mode stays episode-scoped: never fall back to show-wide people.
       if (mode === 'episode') {
-        const episodePeople = await fetchEpisodePeople(traktShowId, seasonNumber, episodeNumber);
-        return { data: episodePeople, source: 'episode' };
+        return fetchEpisodePeople(traktShowId, seasonNumber, episodeNumber);
       }
-      return { data: await fetchShowPeople(traktShowId), source: 'show' };
+      return fetchShowPeople(traktShowId);
     };
     load()
-      .then((result) => {
+      .then((data) => {
         if (!active) {
           return;
         }
-        setFetchedPeople(result.data);
-        setFetchedSource(result.source);
+        setFetchedPeople(data);
         setError(null);
         setLoading(false);
       })
@@ -81,7 +78,6 @@ function CastCrewSectionBody({
           return;
         }
         setFetchedPeople(null);
-        setFetchedSource(null);
         setError(requestError);
         setLoading(false);
       });
@@ -104,7 +100,6 @@ function CastCrewSectionBody({
   }
 
   const people = hasPeopleProp ? peopleProp : fetchedPeople;
-  const source = hasPeopleProp ? (sourceProp || mode) : fetchedSource;
   const cast = people?.cast || [];
   const guests = people?.guestStars || [];
   const departments = people?.departments || [];
@@ -122,14 +117,9 @@ function CastCrewSectionBody({
 
   return (
     <View style={styles.block}>
-      {showCast && source === 'show-fallback' ? (
-        <Text style={styles.meta}>{t('people.showFallbackNote')}</Text>
-      ) : null}
       {showCast && cast.length ? (
         <View style={styles.group}>
-          <Text style={styles.heading}>
-            {source === 'show-fallback' ? t('people.showCastFallback') : t('people.cast')}
-          </Text>
+          <Text style={styles.heading}>{t('people.cast')}</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
             {visibleCast.map((person) => (
               <View key={`cast-${person.personId}`} style={[styles.card, compact && styles.cardCompact]}>
@@ -175,14 +165,12 @@ function CastCrewSectionBody({
         collapsibleCrew ? (
           <CollapsibleCrewSection
             people={people}
-            heading={source === 'show-fallback' ? t('people.showCrewFallback') : t('people.crew')}
+            heading={t('people.crew')}
             previewLimit={crewPreviewLimit}
           />
         ) : (
           <View style={styles.group}>
-            <Text style={styles.heading}>
-              {source === 'show-fallback' ? t('people.showCrewFallback') : t('people.crew')}
-            </Text>
+            <Text style={styles.heading}>{t('people.crew')}</Text>
             {departments.map((department) => (
               <View key={department} style={styles.crewDepartment}>
                 <Text style={styles.department}>{department}</Text>

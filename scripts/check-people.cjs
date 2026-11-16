@@ -179,7 +179,7 @@ const castCrewSource = fs.readFileSync(path.join(__dirname, '..', 'src/component
 expect('show and movie modes use collapsible crew', castCrewSource.includes("collapsibleCrew = mode === 'show' || mode === 'movie'"), true);
 expect('cast crew can load movie people', castCrewSource.includes('fetchMoviePeople'), true);
 expect('crew show more uses i18n key', castCrewSource.includes('people.showMoreCrew'), true);
-expect('episode path does not fetch show fallback', castCrewSource.includes('source: \'show-fallback\''), false);
+expect('episode path does not fetch show fallback', !castCrewSource.includes('show-fallback') && !castCrewSource.includes('showFallbackNote'), true);
 
 const showSource = fs.readFileSync(path.join(__dirname, '..', 'src/app/show/[id].js'), 'utf8');
 const episodeSource = fs.readFileSync(path.join(__dirname, '..', 'src/components/tracking/EpisodeDetailSheet.js'), 'utf8');
@@ -189,6 +189,8 @@ const migration = fs.readFileSync(path.join(__dirname, '..', 'supabase/migration
 expect('show detail renders cast crew', showSource.includes('<CastCrewSection mode="show"'), true);
 expect('episode sheet uses episode actors block', episodeSource.includes('<EpisodeActorsBlock'), true);
 expect('episode sheet does not use show cast section', episodeSource.includes('CastCrewSection'), false);
+expect('episode actors never import show people', !actorsSource.includes('fetchShowPeople'), true);
+expect('episode vote candidates use fetched episode actors', actorsSource.includes('candidates={actors}') && actorsSource.includes('collectEpisodeActors'), true);
 expect('episode actors block always renders voting', actorsSource.includes('<PerformanceVoteSection'), true);
 expect('voting requires watched gate', voteSource.includes('watchToVote'), true);
 expect('voting shows unavailable setup state', voteSource.includes('votesUnavailable'), true);

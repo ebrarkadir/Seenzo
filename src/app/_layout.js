@@ -8,6 +8,7 @@ import i18n from '../i18n';
 import { loadMediaLibrary } from '../data/mediaLibrary';
 import { colors, spacing, typography } from '../theme';
 import { AuthProvider, useAuth } from '../auth/AuthContext';
+import { ProfileProvider } from '../profile/ProfileContext';
 import { TrackingProvider, useTracking } from '../tracking/TrackingContext';
 import PrimaryButton from '../components/ui/PrimaryButton';
 
@@ -77,6 +78,8 @@ function RootStack() {
       <Stack.Screen name="movie/[id]" options={{ title: '' }} />
       <Stack.Screen name="sign-in" options={{ title: t('auth.signInTitle') }} />
       <Stack.Screen name="sign-up" options={{ title: t('auth.signUpTitle') }} />
+      <Stack.Screen name="edit-profile" options={{ title: t('profile.editProfile') }} />
+      <Stack.Screen name="personal-ratings" options={{ title: t('personalRatings.title') }} />
     </Stack>
       </View>
     </View>
@@ -116,8 +119,10 @@ export default function RootLayout() {
     <I18nextProvider i18n={i18n}>
       <AuthProvider>
         <TrackingProvider>
-          <StatusBar style="light" />
-          <RootStack />
+          <ProfileProvider>
+            <StatusBar style="light" />
+            <RootStack />
+          </ProfileProvider>
         </TrackingProvider>
       </AuthProvider>
     </I18nextProvider>

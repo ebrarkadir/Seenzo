@@ -60,7 +60,10 @@ expect('rate chip uses star icon', rateChip.includes('star-outline'));
 expect('episode sheet uses a modal', episodeSheet.includes('<Modal'));
 expect('episode sheet supports watched toggle', episodeSheet.includes('onToggleWatched'));
 expect('overflow menu uses a modal', overflow.includes('<Modal'));
-expect('trakt episodes keep overview text', normalize.includes('overview: typeof episode.overview === \'string\' ? episode.overview : \'\''));
+expect('trakt episodes keep overview text', normalize.includes('overview: normalizeEpisodeOverview(episode.overview)'));
+expect('episode sheet loads missing overviews on demand', episodeSheet.includes('fetchEpisodeOverview'));
+expect('episode sheet uses dedicated missing-overview copy', episodeSheet.includes('tv.noEpisodeOverview'));
+expect('episode sheet does not substitute show synopsis', !episodeSheet.includes('mediaSynopsis(t, show)') && !episodeSheet.includes('show.overview'));
 
 const seasonsIndex = showSource.indexOf('seasons.map((seasonNumber)');
 const castIndex = showSource.indexOf('<CastCrewSection mode="show"');

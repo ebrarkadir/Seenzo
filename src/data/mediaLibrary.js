@@ -43,6 +43,40 @@ export function resolveMovie(id) {
   return demoMovie(id) || movies[id] || null;
 }
 
+function mergePreservedEpisodeOverviews(current, incoming) {
+  if (!current?.seasons?.length || !incoming?.seasons?.length) {
+    return incoming;
+  }
+  const overviewByKey = new Map();
+  current.seasons.forEach((season) => {
+    (season?.episodes || []).forEach((episode) => {
+      const text = typeof episode?.overview === 'string' ? episode.overview.trim() : '';
+      if (!text || typeof episode?.number !== 'number' || typeof season?.season !== 'number') {
+        return;
+      }
+      overviewByKey.set(`${season.season}:${episode.number}`, text);
+    });
+  });
+  if (!overviewByKey.size) {
+    return incoming;
+  }
+  return {
+    ...incoming,
+    seasons: incoming.seasons.map((season) => ({
+      ...season,
+      episodes: (season?.episodes || []).map((episode) => {
+        const key = `${season.season}:${episode.number}`;
+        const preserved = overviewByKey.get(key);
+        const incomingOverview = typeof episode?.overview === 'string' ? episode.overview.trim() : '';
+        if (!preserved || incomingOverview) {
+          return episode;
+        }
+        return { ...episode, overview: preserved };
+      }),
+    })),
+  };
+}
+
 export function rememberShow(show) {
   if (!show?.id || demoShow(show.id)) {
     return show || null;
@@ -51,10 +85,54 @@ export function rememberShow(show) {
   if (current?.hydrated && !show.hydrated) {
     return current;
   }
-  shows[show.id] = show;
+  const next = mergePreservedEpisodeOverviews(current, show);
+  shows[show.id] = next;
   schedulePersist();
   emit();
-  return show;
+  return next;
+}
+
+/** Patch a single episode overview without wiping the rest of the cached show. */
+export function patchEpisodeOverview(showId, seasonNumber, episodeNumber, overview) {
+  const id = String(showId || '');
+  const season = Number(seasonNumber);
+  const number = Number(episodeNumber);
+  const text = typeof overview === 'string' ? overview.trim() : '';
+  if (!id || demoShow(id) || !text || !Number.isInteger(season) || season < 0 || !Number.isInteger(number) || number <= 0) {
+    return null;
+  }
+  const current = shows[id];
+  if (!current?.seasons?.length) {
+    return current || null;
+  }
+  let changed = false;
+  const seasons = current.seasons.map((block) => {
+    if (block.season !== season) {
+      return block;
+    }
+    return {
+      ...block,
+      episodes: (block.episodes || []).map((episode) => {
+        if (episode.number !== number) {
+          return episode;
+        }
+        const existing = typeof episode.overview === 'string' ? episode.overview.trim() : '';
+        if (existing) {
+          return episode;
+        }
+        changed = true;
+        return { ...episode, overview: text };
+      }),
+    };
+  });
+  if (!changed) {
+    return current;
+  }
+  const next = { ...current, seasons };
+  shows[id] = next;
+  schedulePersist();
+  emit();
+  return next;
 }
 
 export function rememberMovie(movie) {

@@ -423,7 +423,14 @@ export default function ShowDetailScreen() {
         episode={selectedEpisode}
         watched={selectedEpisode ? watched.has(selectedEpisode.id) : false}
         rating={selectedEpisode ? episodeRatings?.[selectedEpisode.id] ?? null : null}
-        onClose={() => setSelectedEpisodeId(null)}
+        onClose={() => {
+          const closingEpisodeRating = ratingTarget?.type === 'episode';
+          setSelectedEpisodeId(null);
+          if (closingEpisodeRating) {
+            setRatingTarget(null);
+            setDraft(null);
+          }
+        }}
         onToggleWatched={() => {
           if (selectedEpisode) {
             toggleEpisode(show.id, selectedEpisode.id);
@@ -439,7 +446,12 @@ export default function ShowDetailScreen() {
       />
       <RatingSheet
         visible={Boolean(ratingTarget)}
-        title={ratingTarget?.type === 'episode' ? ratingTarget.title : t('rating.show')}
+        title={ratingTarget?.type === 'episode' ? t('rating.episode') : t('rating.show')}
+        mediaTitle={
+          ratingTarget?.type === 'episode'
+            ? ratingTarget.title
+            : show?.title
+        }
         value={draft}
         savedValue={
           ratingTarget?.type === 'episode'

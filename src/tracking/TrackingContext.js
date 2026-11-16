@@ -708,6 +708,8 @@ export function TrackingProvider({ children }) {
     movies: state.movies,
     showRatings: state.showRatings,
     episodeRatings: state.episodeRatings,
+    episodeMeta: state.episodeMeta,
+    keptEpisodes: state.keptEpisodes,
     undo,
     dismissUndo,
     undoLast,

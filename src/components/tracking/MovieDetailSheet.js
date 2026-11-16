@@ -122,6 +122,7 @@ export default function MovieDetailSheet({
       <RatingSheet
         visible={ratingOpen && watched && Boolean(movie)}
         title={t('rating.movie')}
+        mediaTitle={movie?.title}
         value={draft}
         savedValue={movieRating}
         onChange={setDraft}

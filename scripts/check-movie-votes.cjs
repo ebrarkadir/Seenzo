@@ -116,6 +116,7 @@ const voteUi = fs.readFileSync(
 );
 expect('vote ui supports movie mode', voteUi.includes("mode === 'movie'"), true);
 expect('vote ui uses movie cast/clear APIs', voteUi.includes('castMoviePerformanceVote') && voteUi.includes('clearMoviePerformanceVote'), true);
+expect('vote ui scrolls selected movie actor after vote', voteUi.includes('scrollToIndex') && voteUi.includes('pendingScrollPersonId'), true);
 
 const block = fs.readFileSync(
   path.join(__dirname, '..', 'src/components/people/MoviePerformanceBlock.js'),

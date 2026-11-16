@@ -68,6 +68,15 @@ expect('sign up sends the trimmed email', signUpSource.includes('signUp(trimmedE
 expect('sign in sends the trimmed email', signInSource.includes('signIn(trimmedEmail, password)'), true);
 expect('gitignore ignores local env files', fs.readFileSync(path.join(__dirname, '..', '.gitignore'), 'utf8').includes('.env*.local'), true);
 
+const authContext = fs.readFileSync(path.join(__dirname, '..', 'src/auth/AuthContext.js'), 'utf8');
+expect(
+  'signOut clears session even when supabase returns an error',
+  authContext.includes('await supabase.auth.signOut()')
+    && authContext.includes('setSession(null)')
+    && !/if \(!error\) \{\s*setSession\(null\);/s.test(authContext),
+  true
+);
+
 const failed = checks.filter((check) => !check.pass);
 if (failed.length) {
   console.error(JSON.stringify(failed, null, 2));

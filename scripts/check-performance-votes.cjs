@@ -128,8 +128,10 @@ const voteUi = fs.readFileSync(
 expect('vote ui uses optimistic pending selection', voteUi.includes('pendingPersonId'), true);
 expect('vote ui rolls back on failure', voteUi.includes('setStats(previousStats)'), true);
 expect('vote ui ignores stale responses', voteUi.includes('requestSeq'), true);
+expect('vote ui ignores stale stats loads', voteUi.includes('loadSeq'), true);
 expect('vote ui shows saving indicator', voteUi.includes('people.voteSaving'), true);
 expect('vote ui keeps horizontal actor cards', voteUi.includes('horizontal') && voteUi.includes('vote-card-'), true);
+expect('vote ui scrolls selected actor after confirmed vote', voteUi.includes('scrollToIndex') && voteUi.includes('pendingScrollPersonId'), true);
 expect('vote ui shows stats on cards', voteUi.includes('people.voteStats'), true);
 expect('vote ui has no vertical rank list', !voteUi.includes('rankList') && !voteUi.includes('rank-'), true);
 expect('vote ui has no progress bars under cards', !voteUi.includes('styles.track') && !voteUi.includes('styles.fill'), true);

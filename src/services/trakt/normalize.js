@@ -87,6 +87,21 @@ export function mapReleaseStatus(status) {
   return 'ongoing';
 }
 
+export function normalizeEpisodeOverview(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  return value.trim();
+}
+
+function preferOverview(current, incoming) {
+  const next = normalizeEpisodeOverview(incoming);
+  if (next) {
+    return next;
+  }
+  return normalizeEpisodeOverview(current);
+}
+
 function toEpisode(episode, seasonNumber) {
   const traktId = episode?.ids?.trakt;
   const season = typeof episode?.season === 'number' ? episode.season : seasonNumber;
@@ -99,12 +114,23 @@ function toEpisode(episode, seasonNumber) {
     season,
     number: episode.number,
     title: episode.title || '',
-    overview: typeof episode.overview === 'string' ? episode.overview : '',
+    overview: normalizeEpisodeOverview(episode.overview),
     runtime: typeof episode.runtime === 'number' ? episode.runtime : null,
     airDate: airDateFromTrakt(episode.first_aired),
     communityRating: typeof episode.rating === 'number' ? episode.rating : null,
     posterPath: pickPosterPath(episode.images),
   };
+}
+
+export function mergeEpisodeOverview(episode, overview) {
+  if (!episode?.id) {
+    return episode || null;
+  }
+  const next = preferOverview(episode.overview, overview);
+  if (next === normalizeEpisodeOverview(episode.overview)) {
+    return episode;
+  }
+  return { ...episode, overview: next };
 }
 
 function toSeason(season) {

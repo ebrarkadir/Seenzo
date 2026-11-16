@@ -1,9 +1,9 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 
 import { mediaTitle } from '../../data/labels';
-import { colors, radii, spacing } from '../../theme';
+import { colors, radii, spacing, typography } from '../../theme';
 import { deriveShowStatus } from '../../tracking/status';
 import { useTracking } from '../../tracking/TrackingContext';
 import { isMovieWatchlisted, isShowWatchlisted, movieBookmarkVisible, showBookmarkVisible } from '../../tracking/watchlist';
@@ -75,8 +75,21 @@ export function MoviePoster({ movie, watched, rating, width, height, onPress, on
       badge={tracked && !watched ? t('discover.inLibrary') : null}
       onPress={onPress}
       accessibilityLabel={t('movies.openMovie', { title })}
-      quickLabel={onMarkWatched ? t('movies.markWatchedAndOpen', { title }) : null}
-      onQuick={onMarkWatched}
+      bottomOverlay={
+        onMarkWatched ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('movies.markWatchedAndOpen', { title })}
+            onPress={onMarkWatched}
+            style={styles.markWatched}
+          >
+            <Ionicons name="checkmark" size={15} color={colors.onPrimary} />
+            <Text style={styles.markWatchedLabel} numberOfLines={1}>
+              {t('movies.markWatched')}
+            </Text>
+          </Pressable>
+        ) : null
+      }
     />
   );
 }
@@ -104,5 +117,25 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceElevated,
     borderWidth: 1,
     borderColor: colors.border,
+  },
+  markWatched: {
+    alignSelf: 'stretch',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    minHeight: 36,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 8,
+    backgroundColor: colors.primary,
+    opacity: 1,
+    borderBottomLeftRadius: radii.md,
+    borderBottomRightRadius: radii.md,
+  },
+  markWatchedLabel: {
+    ...typography.label,
+    color: colors.onPrimary,
+    fontWeight: '700',
+    flexShrink: 1,
   },
 });

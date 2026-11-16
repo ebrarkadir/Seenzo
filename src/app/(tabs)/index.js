@@ -175,7 +175,11 @@ export default function TvShowsScreen() {
         episode={selectedEpisode}
         watched={selectedWatched}
         rating={selectedEpisode ? episodeRatings?.[selectedEpisode.id] ?? null : null}
-        onClose={() => setSelected(null)}
+        onClose={() => {
+          setSelected(null);
+          setRatingTarget(null);
+          setDraft(null);
+        }}
         onToggleWatched={() => {
           if (selectedShow && selectedEpisode) {
             toggleEpisode(selectedShow.id, selectedEpisode.id);
@@ -194,11 +198,15 @@ export default function TvShowsScreen() {
       />
       <RatingSheet
         visible={Boolean(ratingTarget)}
-        title={ratingTarget?.title || t('rating.episode')}
+        title={t('rating.episode')}
+        mediaTitle={ratingTarget?.title}
         value={draft}
         savedValue={ratingTarget ? episodeRatings?.[ratingTarget.id] ?? null : null}
         onChange={setDraft}
-        onClose={() => setRatingTarget(null)}
+        onClose={() => {
+          setRatingTarget(null);
+          setDraft(null);
+        }}
         onSave={() => {
           if (draft == null || !ratingTarget) {
             return;
@@ -208,6 +216,7 @@ export default function TvShowsScreen() {
           }
           setEpisodeRating(ratingTarget.id, draft);
           setRatingTarget(null);
+          setDraft(null);
         }}
         onRemove={() => {
           if (!ratingTarget) {
@@ -218,6 +227,7 @@ export default function TvShowsScreen() {
           }
           setEpisodeRating(ratingTarget.id, null);
           setRatingTarget(null);
+          setDraft(null);
         }}
       />
     </View>
