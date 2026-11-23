@@ -8,6 +8,7 @@ export function movieMediaIdFromTraktId(movieTraktId) {
   return `trakt-movie-${id}`;
 }
 
+/** Cast-only Trakt person ids. Never read crew / guest_stars for movie eligibility. */
 export function extractMovieActorIds(peoplePayload) {
   const ids = new Set();
   (peoplePayload?.cast || []).forEach((entry) => {

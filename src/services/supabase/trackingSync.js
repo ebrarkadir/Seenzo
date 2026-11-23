@@ -1,8 +1,10 @@
+import { activityEventsFromRemoteRows, activityRowFromEvent, pendingActivityEvents } from '../../tracking/activityEvents';
 import { classifyChange, remoteEpisodeSignature, remoteMediaSignature } from '../../tracking/cloudState';
 import { getSupabase } from './client';
 
 const MEDIA_COLUMNS = 'media_type, media_id, show_intent, movie_saved, movie_watched, rating, updated_at';
 const EPISODE_COLUMNS = 'show_media_id, episode_id, season_number, episode_number, watched, rating, watched_at, updated_at';
+const ACTIVITY_COLUMNS = 'client_event_id, media_type, media_id, show_media_id, action, source, client_logged_at, server_recorded_at';
 
 async function currentUserId(supabase) {
   const { data, error } = await supabase.auth.getUser();
@@ -40,7 +42,20 @@ export async function pullTracking(supabase) {
     selectAll(supabase, 'media_entries', MEDIA_COLUMNS, userId),
     selectAll(supabase, 'episode_entries', EPISODE_COLUMNS, userId),
   ]);
-  return { userId, media, episodes };
+  let activity = [];
+  try {
+    activity = await selectAll(supabase, 'watch_activity_events', ACTIVITY_COLUMNS, userId);
+  } catch {
+    // Table may not exist until the V2 migration is applied manually.
+    activity = [];
+  }
+  return {
+    userId,
+    media,
+    episodes,
+    activity,
+    activityEvents: activityEventsFromRemoteRows(activity),
+  };
 }
 
 async function rowsFor(supabase, table, column, ids, userId, columns) {
@@ -177,6 +192,51 @@ export async function pushTracking(supabase, expectedUserId, queue, stamps) {
     conflicts,
     stamps: nextStamps,
     removed: { media: mediaDeletes, episodes: episodeDeletes },
+  };
+}
+
+export async function pushActivityEvents(supabase, expectedUserId, state) {
+  const userId = await currentUserId(supabase);
+  if (userId !== expectedUserId) {
+    const failure = new Error('auth');
+    failure.code = 'auth';
+    throw failure;
+  }
+  const pending = pendingActivityEvents(state);
+  if (!pending.length) {
+    return { userId, acked: [] };
+  }
+  const rows = pending
+    .map((event) => activityRowFromEvent(event, userId))
+    .filter(Boolean);
+  if (!rows.length) {
+    return { userId, acked: [] };
+  }
+  const { error: insertError } = await supabase
+    .from('watch_activity_events')
+    .upsert(rows, { onConflict: 'user_id,client_event_id', ignoreDuplicates: true });
+  if (insertError) {
+    // Keep local pending events until the activity migration is applied.
+    if (insertError.code === 'PGRST205' || /watch_activity_events/i.test(insertError.message || '')) {
+      return { userId, acked: [], deferred: true };
+    }
+    throw insertError;
+  }
+  const ids = pending.map((event) => event.clientEventId);
+  const remote = await rowsFor(
+    supabase,
+    'watch_activity_events',
+    'client_event_id',
+    ids,
+    userId,
+    ACTIVITY_COLUMNS
+  );
+  return {
+    userId,
+    acked: (remote || []).map((row) => ({
+      clientEventId: row.client_event_id,
+      serverRecordedAt: row.server_recorded_at || null,
+    })),
   };
 }
 

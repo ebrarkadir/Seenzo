@@ -14,6 +14,9 @@ import {
   normalizeProfileRow,
   normalizeUsername,
 } from './profileRules';
+import { canPublishProfile } from './socialRules';
+
+const PROFILE_COLUMNS = 'user_id, display_name, username, bio, avatar_path, banner_path, is_public, updated_at';
 
 function markCoded(code, cause) {
   const error = new Error(code);
@@ -67,7 +70,7 @@ async function withSignedUrls(profile, options = {}) {
 async function ensureOwnProfileRow(supabase, userId) {
   const { data, error } = await supabase
     .from('profiles')
-    .select('user_id, display_name, username, bio, avatar_path, banner_path, updated_at')
+    .select(PROFILE_COLUMNS)
     .eq('user_id', userId)
     .maybeSingle();
   if (error) {
@@ -79,7 +82,7 @@ async function ensureOwnProfileRow(supabase, userId) {
   const { data: created, error: createError } = await supabase
     .from('profiles')
     .upsert({ user_id: userId }, { onConflict: 'user_id' })
-    .select('user_id, display_name, username, bio, avatar_path, banner_path, updated_at')
+    .select(PROFILE_COLUMNS)
     .single();
   if (createError) {
     throw markCoded('profile_load_failed', createError);
@@ -99,17 +102,29 @@ export async function fetchOwnProfile() {
   const userId = authData.user.id;
   const { data, error } = await supabase
     .from('profiles')
-    .select('user_id, display_name, username, bio, avatar_path, banner_path, updated_at')
+    .select(PROFILE_COLUMNS)
     .eq('user_id', userId)
     .maybeSingle();
   if (error) {
+    // Older databases without is_public still load core columns.
+    if (/is_public|42703/i.test(`${error.message || ''} ${error.code || ''}`)) {
+      const legacy = await supabase
+        .from('profiles')
+        .select('user_id, display_name, username, bio, avatar_path, banner_path, updated_at')
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (legacy.error) {
+        throw markCoded('profile_load_failed', legacy.error);
+      }
+      return withSignedUrls(normalizeProfileRow({ ...legacy.data, is_public: false }));
+    }
     throw markCoded('profile_load_failed', error);
   }
   if (!data) {
     const { data: created, error: createError } = await supabase
       .from('profiles')
       .upsert({ user_id: userId }, { onConflict: 'user_id' })
-      .select('user_id, display_name, username, bio, avatar_path, banner_path, updated_at')
+      .select(PROFILE_COLUMNS)
       .single();
     if (createError) {
       throw markCoded('profile_load_failed', createError);
@@ -153,12 +168,21 @@ export async function updateOwnProfile(input) {
   if (!isValidBio(bio)) {
     throw markCoded('invalid_bio');
   }
+  const isPublic = Object.prototype.hasOwnProperty.call(input, 'isPublic')
+    ? Boolean(input.isPublic)
+    : undefined;
+  if (isPublic != null && !canPublishProfile({ username, isPublic })) {
+    throw markCoded('public_requires_username');
+  }
 
   const patch = {
     display_name: displayName,
     username,
     bio: bio || null,
   };
+  if (isPublic != null) {
+    patch.is_public = isPublic;
+  }
   if (Object.prototype.hasOwnProperty.call(input, 'avatarPath')) {
     patch.avatar_path = input.avatarPath || null;
   }
@@ -170,9 +194,12 @@ export async function updateOwnProfile(input) {
     .from('profiles')
     .update(patch)
     .eq('user_id', userId)
-    .select('user_id, display_name, username, bio, avatar_path, banner_path, updated_at')
+    .select(PROFILE_COLUMNS)
     .single();
   if (error) {
+    if (/profiles_public_requires_username/i.test(`${error.message || ''} ${error.details || ''}`)) {
+      throw markCoded('public_requires_username', error);
+    }
     throw mapProfileError(error);
   }
   return withSignedUrls(normalizeProfileRow(data));
@@ -205,7 +232,7 @@ export async function updateOwnProfileMediaPaths(input) {
     .from('profiles')
     .update(patch)
     .eq('user_id', userId)
-    .select('user_id, display_name, username, bio, avatar_path, banner_path, updated_at')
+    .select(PROFILE_COLUMNS)
     .maybeSingle();
   if (error) {
     throw mapProfileError(error);

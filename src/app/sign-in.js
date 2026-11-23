@@ -5,7 +5,12 @@ import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 
 import { useAuth } from '../auth/AuthContext';
-import { authErrorMessage, validateEmail, validatePassword } from '../auth/messages';
+import {
+  authErrorMessage,
+  isUnconfirmedEmailError,
+  validateEmail,
+  validatePassword,
+} from '../auth/messages';
 import AuthField from '../components/auth/AuthField';
 import PrimaryButton from '../components/ui/PrimaryButton';
 import { colors, spacing, typography } from '../theme';
@@ -13,15 +18,18 @@ import { colors, spacing, typography } from '../theme';
 export default function SignInScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
-  const { config, signIn } = useAuth();
+  const { config, signIn, resendConfirmation } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fieldError, setFieldError] = useState({});
   const [formError, setFormError] = useState('');
+  const [formNotice, setFormNotice] = useState('');
+  const [needsConfirmation, setNeedsConfirmation] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
 
   const finish = () => {
-    router.replace('/(tabs)/profile');
+    router.replace('/');
   };
 
   const submit = async () => {
@@ -38,6 +46,8 @@ export default function SignInScreen() {
     }
     setFieldError(nextErrors);
     setFormError('');
+    setFormNotice('');
+    setNeedsConfirmation(false);
     if (Object.keys(nextErrors).length || !config.ready) {
       return;
     }
@@ -46,13 +56,41 @@ export default function SignInScreen() {
       const result = await signIn(trimmedEmail, password);
       if (result.error) {
         setFormError(authErrorMessage(t, result.error));
+        setNeedsConfirmation(isUnconfirmedEmailError(result.error));
         return;
       }
       finish();
     } catch (error) {
       setFormError(authErrorMessage(t, error));
+      setNeedsConfirmation(isUnconfirmedEmailError(error));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const onResend = async () => {
+    if (resending || !config.ready) {
+      return;
+    }
+    const trimmedEmail = email.trim();
+    if (!validateEmail(trimmedEmail)) {
+      setFieldError({ email: t('auth.emailInvalid') });
+      return;
+    }
+    setResending(true);
+    setFormError('');
+    setFormNotice('');
+    try {
+      const result = await resendConfirmation(trimmedEmail);
+      if (result.error) {
+        setFormError(authErrorMessage(t, result.error));
+        return;
+      }
+      setFormNotice(t('auth.resendSent'));
+    } catch (error) {
+      setFormError(authErrorMessage(t, error));
+    } finally {
+      setResending(false);
     }
   };
 
@@ -85,9 +123,18 @@ export default function SignInScreen() {
           textContentType="password"
           error={fieldError.password}
         />
+        {formNotice ? <Text style={styles.notice}>{formNotice}</Text> : null}
         {formError ? <Text style={styles.error}>{formError}</Text> : null}
         <View style={styles.actions}>
           <PrimaryButton label={loading ? t('auth.working') : t('auth.signIn')} onPress={submit} disabled={loading || !config.ready} />
+          {needsConfirmation ? (
+            <PrimaryButton
+              label={resending ? t('auth.working') : t('auth.resendConfirmation')}
+              variant="secondary"
+              onPress={onResend}
+              disabled={resending || loading || !config.ready}
+            />
+          ) : null}
           <PrimaryButton label={t('auth.createAccount')} variant="secondary" onPress={() => router.push('/sign-up')} />
         </View>
       </ScrollView>
@@ -112,6 +159,10 @@ const styles = StyleSheet.create({
   body: {
     ...typography.body,
     color: colors.textSecondary,
+  },
+  notice: {
+    ...typography.caption,
+    color: colors.status.caughtUp,
   },
   error: {
     ...typography.caption,

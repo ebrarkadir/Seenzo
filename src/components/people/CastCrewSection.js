@@ -1,10 +1,18 @@
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import { fetchEpisodePeople, fetchMoviePeople, fetchShowPeople } from '../../services/trakt/people';
-import { colors, spacing, typography } from '../../theme';
+import { colors, radii, spacing, typography } from '../../theme';
 import PrimaryButton from '../ui/PrimaryButton';
 import {
   CAST_PREVIEW_COUNT,
@@ -41,11 +49,12 @@ function CastCrewSectionBody({
   onRetry,
 }) {
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const hasPeopleProp = peopleProp != null;
   const [fetchedPeople, setFetchedPeople] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(!hasPeopleProp);
-  const [showAllCast, setShowAllCast] = useState(false);
+  const [castModalOpen, setCastModalOpen] = useState(false);
   const showCast = parts === 'all' || parts === 'cast';
   const showCrew = parts === 'all' || parts === 'crew';
 
@@ -104,12 +113,14 @@ function CastCrewSectionBody({
   const guests = people?.guestStars || [];
   const departments = people?.departments || [];
   const castPreviewCount = mode === 'movie' ? MOVIE_CAST_PREVIEW_COUNT : CAST_PREVIEW_COUNT;
-  const visibleCast = showAllCast ? cast : cast.slice(0, castPreviewCount);
+  const needsSeeAll = cast.length > castPreviewCount;
+  const visibleCast = needsSeeAll ? cast.slice(0, castPreviewCount) : cast;
   const emptyCast = !cast.length && !guests.length;
   const emptyCrew = !departments.length;
   const empty = (showCast ? emptyCast : true) && (showCrew ? emptyCrew : true);
   const collapsibleCrew = mode === 'show' || mode === 'movie';
   const crewPreviewLimit = mode === 'movie' ? MOVIE_KEY_CREW_LIMIT : KEY_CREW_LIMIT;
+  const cardWidthStyle = compact ? styles.cardCompact : null;
 
   if (empty) {
     return parts === 'all' ? <Text style={styles.meta}>{t('people.empty')}</Text> : null;
@@ -122,25 +133,34 @@ function CastCrewSectionBody({
           <Text style={styles.heading}>{t('people.cast')}</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
             {visibleCast.map((person) => (
-              <View key={`cast-${person.personId}`} style={[styles.card, compact && styles.cardCompact]}>
-                <PersonAvatar headshotPath={person.headshotPath} size={compact ? 56 : 72} />
-                <Text style={styles.name} numberOfLines={2}>{person.name}</Text>
-                <Text style={styles.role} numberOfLines={2}>
-                  {person.characters.join(', ') || t('people.unknownRole')}
-                </Text>
-                {person.episodeCount != null ? (
-                  <Text style={styles.meta}>{t('people.episodeCount', { count: person.episodeCount })}</Text>
-                ) : null}
-              </View>
+              <CastPersonCard
+                key={`cast-${person.personId}`}
+                person={person}
+                compact={compact}
+                unknownRole={t('people.unknownRole')}
+                episodeCountLabel={
+                  person.episodeCount != null
+                    ? t('people.episodeCount', { count: person.episodeCount })
+                    : null
+                }
+              />
             ))}
+            {needsSeeAll ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t('people.seeAllCastA11y', { count: cast.length })}
+                onPress={() => setCastModalOpen(true)}
+                style={[styles.seeAllCard, cardWidthStyle]}
+              >
+                <View style={styles.seeAllIconWrap}>
+                  <Ionicons name="people-outline" size={compact ? 22 : 26} color={colors.primary} />
+                </View>
+                <Text style={styles.seeAllLabel}>{t('people.seeAllCast')}</Text>
+                <Text style={styles.seeAllCount}>{t('people.seeAllCastCount', { count: cast.length })}</Text>
+                <Ionicons name="arrow-forward" size={16} color={colors.primary} />
+              </Pressable>
+            ) : null}
           </ScrollView>
-          {cast.length > castPreviewCount ? (
-            <Pressable accessibilityRole="button" onPress={() => setShowAllCast((value) => !value)}>
-              <Text style={styles.link}>
-                {showAllCast ? t('people.showLess') : t('people.showAllCast', { count: cast.length })}
-              </Text>
-            </Pressable>
-          ) : null}
         </View>
       ) : null}
 
@@ -149,13 +169,12 @@ function CastCrewSectionBody({
           <Text style={styles.heading}>{t('people.guestStars')}</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
             {guests.map((person) => (
-              <View key={`guest-${person.personId}`} style={[styles.card, compact && styles.cardCompact]}>
-                <PersonAvatar headshotPath={person.headshotPath} size={compact ? 56 : 72} />
-                <Text style={styles.name} numberOfLines={2}>{person.name}</Text>
-                <Text style={styles.role} numberOfLines={2}>
-                  {person.characters.join(', ') || t('people.unknownRole')}
-                </Text>
-              </View>
+              <CastPersonCard
+                key={`guest-${person.personId}`}
+                person={person}
+                compact={compact}
+                unknownRole={t('people.unknownRole')}
+              />
             ))}
           </ScrollView>
         </View>
@@ -186,6 +205,60 @@ function CastCrewSectionBody({
           </View>
         )
       ) : null}
+
+      <Modal
+        visible={castModalOpen}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setCastModalOpen(false)}
+      >
+        <View style={[styles.modalScreen, { paddingTop: Math.max(insets.top, spacing.md) }]}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>{t('people.allCastTitle')}</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('people.closeCastList')}
+              onPress={() => setCastModalOpen(false)}
+              style={styles.modalClose}
+            >
+              <Ionicons name="close" size={22} color={colors.text} />
+            </Pressable>
+          </View>
+          <Text style={styles.modalMeta}>{t('people.allCastCount', { count: cast.length })}</Text>
+          <ScrollView
+            contentContainerStyle={[
+              styles.modalList,
+              { paddingBottom: Math.max(insets.bottom, spacing.lg) },
+            ]}
+          >
+            {cast.map((person, index) => (
+              <View key={`modal-cast-${person.personId}`} style={styles.modalRow}>
+                <Text style={styles.modalRank}>{index + 1}</Text>
+                <PersonAvatar headshotPath={person.headshotPath} size={52} />
+                <View style={styles.modalCopy}>
+                  <Text style={styles.name} numberOfLines={1}>{person.name}</Text>
+                  <Text style={styles.role} numberOfLines={2}>
+                    {person.characters.join(', ') || t('people.unknownRole')}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </ScrollView>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+function CastPersonCard({ person, compact, unknownRole, episodeCountLabel = null }) {
+  return (
+    <View style={[styles.card, compact && styles.cardCompact]}>
+      <PersonAvatar headshotPath={person.headshotPath} size={compact ? 56 : 72} />
+      <Text style={styles.name} numberOfLines={2}>{person.name}</Text>
+      <Text style={styles.role} numberOfLines={2}>
+        {person.characters.join(', ') || unknownRole}
+      </Text>
+      {episodeCountLabel ? <Text style={styles.meta}>{episodeCountLabel}</Text> : null}
     </View>
   );
 }
@@ -327,6 +400,7 @@ const styles = StyleSheet.create({
   row: {
     gap: spacing.sm,
     paddingVertical: spacing.xs,
+    alignItems: 'stretch',
   },
   card: {
     width: 108,
@@ -334,6 +408,39 @@ const styles = StyleSheet.create({
   },
   cardCompact: {
     width: 96,
+  },
+  seeAllCard: {
+    width: 108,
+    minHeight: 148,
+    gap: spacing.xs,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.lg,
+    backgroundColor: colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  seeAllIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: radii.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  seeAllLabel: {
+    ...typography.label,
+    color: colors.text,
+    textAlign: 'center',
+  },
+  seeAllCount: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    textAlign: 'center',
   },
   name: {
     ...typography.label,
@@ -395,5 +502,61 @@ const styles = StyleSheet.create({
     gap: 4,
     alignSelf: 'flex-start',
     paddingVertical: spacing.xs,
+  },
+  modalScreen: {
+    flex: 1,
+    backgroundColor: colors.background,
+    paddingHorizontal: spacing.md,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  modalTitle: {
+    ...typography.title,
+    color: colors.text,
+    flex: 1,
+  },
+  modalClose: {
+    width: 40,
+    height: 40,
+    borderRadius: radii.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  modalMeta: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginBottom: spacing.sm,
+  },
+  modalList: {
+    gap: spacing.sm,
+  },
+  modalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    padding: spacing.sm,
+    borderRadius: radii.lg,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  modalRank: {
+    ...typography.label,
+    color: colors.primary,
+    width: 24,
+    textAlign: 'center',
+  },
+  modalCopy: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
   },
 });

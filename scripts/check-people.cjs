@@ -102,6 +102,25 @@ const movieActors = people.collectMovieActors(normalized);
 expect('movie actors use cast only', movieActors.map((item) => item.personId), [11, 22]);
 expect('movie actors exclude guests list and crew', movieActors.some((item) => item.personId === 55 || item.personId === 33 || item.personId === 44), false);
 
+const dualMovie = people.normalizePeoplePayload({
+  cast: [
+    { character: 'William Munny', person: { name: 'Clint Eastwood', ids: { trakt: 7420 }, images: null } },
+  ],
+  crew: {
+    directing: [
+      { job: 'Director', person: { name: 'Clint Eastwood', ids: { trakt: 7420 }, images: null } },
+      { job: 'Director', person: { name: 'Christopher Nolan', ids: { trakt: 411154 }, images: null } },
+    ],
+    writing: [
+      { job: 'Writer', person: { name: 'Writer Only', ids: { trakt: 99 }, images: null } },
+    ],
+  },
+});
+const dualMovieActors = people.collectMovieActors(dualMovie).map((item) => item.personId);
+expect('dual-role director-actor remains movie eligible', dualMovieActors.includes(7420), true);
+expect('crew-only movie director excluded from Best Performance', dualMovieActors.includes(411154), false);
+expect('crew-only movie writer excluded from Best Performance', dualMovieActors.includes(99), false);
+
 const stats = votes.normalizeVoteStats([
   { person_trakt_id: 11, vote_count: 3, total_votes: 5, my_person_trakt_id: 11 },
   { person_trakt_id: 22, vote_count: 2, total_votes: 5, my_person_trakt_id: 11 },
@@ -109,9 +128,42 @@ const stats = votes.normalizeVoteStats([
 expect('vote totals are normalized', stats.totalVotes, 5);
 expect('my vote is normalized', stats.myPersonId, 11);
 const ranked = votes.rankPerformanceVotes(episodeActors, stats);
-expect('votes are sorted high to low', ranked.map((item) => item.personId), [11, 22, 55]);
+// stats: 11 has 3 votes, 22 has 2, 55 has 0
+expect('best performance ranks by votes then cast order', ranked.map((item) => item.personId), [11, 22, 55]);
 expect('percent uses total votes', ranked[0].percent, 60);
 expect('selected person is marked', ranked[0].selected, true);
+
+const exampleCast = [
+  { personId: 1, name: 'Robert Pattinson' },
+  { personId: 2, name: 'Merritt Wever' },
+  { personId: 3, name: 'Skyler Gisondo' },
+  { personId: 4, name: 'Actor D' },
+];
+const exampleStats = votes.normalizeVoteStats([
+  { person_trakt_id: 1, vote_count: 2, total_votes: 8, my_person_trakt_id: 3 },
+  { person_trakt_id: 2, vote_count: 0, total_votes: 8, my_person_trakt_id: 3 },
+  { person_trakt_id: 3, vote_count: 5, total_votes: 8, my_person_trakt_id: 3 },
+  { person_trakt_id: 4, vote_count: 1, total_votes: 8, my_person_trakt_id: 3 },
+]);
+expect(
+  'example ranks by votes with cast tiebreak',
+  votes.rankPerformanceVotes(exampleCast, exampleStats).map((item) => item.personId),
+  [3, 1, 4, 2]
+);
+expect(
+  'zero votes keep cast billing order',
+  votes.rankPerformanceVotes(exampleCast, votes.emptyVoteStats()).map((item) => item.personId),
+  [1, 2, 3, 4]
+);
+const tied = votes.normalizeVoteStats([
+  { person_trakt_id: 1, vote_count: 2, total_votes: 4, my_person_trakt_id: null },
+  { person_trakt_id: 3, vote_count: 2, total_votes: 4, my_person_trakt_id: null },
+]);
+expect(
+  'tied votes use earlier cast billing first',
+  votes.rankPerformanceVotes(exampleCast, tied).map((item) => item.personId),
+  [1, 3, 2, 4]
+);
 expect('empty stats start at zero', votes.emptyVoteStats().totalVotes, 0);
 expect('detects missing rpc', votes.isVotesSetupUnavailable({ code: 'PGRST202', message: 'Could not find the function' }), true);
 expect('detects votes_unavailable code', votes.isVotesSetupUnavailable({ code: 'votes_unavailable' }), true);
@@ -180,6 +232,9 @@ expect('show and movie modes use collapsible crew', castCrewSource.includes("col
 expect('cast crew can load movie people', castCrewSource.includes('fetchMoviePeople'), true);
 expect('crew show more uses i18n key', castCrewSource.includes('people.showMoreCrew'), true);
 expect('episode path does not fetch show fallback', !castCrewSource.includes('show-fallback') && !castCrewSource.includes('showFallbackNote'), true);
+expect('see all lives inside cast carousel', castCrewSource.includes('seeAllCard') && castCrewSource.includes('people.seeAllCast'), true);
+expect('no below-carousel show-all text toggle', !castCrewSource.includes('setShowAllCast') && !castCrewSource.includes('people.showAllCast'), true);
+expect('see all opens cast modal', castCrewSource.includes('<Modal') && castCrewSource.includes('castModalOpen'), true);
 
 const showSource = fs.readFileSync(path.join(__dirname, '..', 'src/app/show/[id].js'), 'utf8');
 const episodeSource = fs.readFileSync(path.join(__dirname, '..', 'src/components/tracking/EpisodeDetailSheet.js'), 'utf8');

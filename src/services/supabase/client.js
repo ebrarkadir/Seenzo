@@ -37,7 +37,9 @@ export function getSupabase() {
         storage: AsyncStorage,
         autoRefreshToken: true,
         persistSession: true,
+        // Native deep links are handled manually in src/app/auth/callback.js.
         detectSessionInUrl: false,
+        flowType: 'pkce',
       },
     }
   );

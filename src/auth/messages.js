@@ -10,13 +10,29 @@ export function isEmailAddressInvalid(error) {
 }
 
 export function authErrorMessage(t, error) {
+  const code = String(error?.code || '').toLowerCase();
   const message = String(error?.message || '');
   const lowered = message.toLowerCase();
+  if (code === 'emailinvalid' || code === 'email_invalid') {
+    return t('auth.emailInvalid');
+  }
   if (isEmailAddressInvalid(error)) {
     return t('auth.errors.emailInvalid');
   }
-  if (!message || message === 'missing') {
+  if (!message || message === 'missing' || code === 'missing') {
     return t('auth.errors.missing');
+  }
+  if (code === 'link_expired' || lowered.includes('otp_expired') || lowered.includes('expired')) {
+    return t('auth.errors.link_expired');
+  }
+  if (code === 'link_used') {
+    return t('auth.errors.link_used');
+  }
+  if (code === 'link_device_mismatch' || lowered.includes('code verifier') || lowered.includes('flow state')) {
+    return t('auth.errors.link_device_mismatch');
+  }
+  if (code === 'link_invalid') {
+    return t('auth.errors.link_invalid');
   }
   if (lowered.includes('invalid login') || lowered.includes('invalid credentials')) {
     return t('auth.errors.invalid');
@@ -33,10 +49,15 @@ export function authErrorMessage(t, error) {
   if (lowered.includes('network') || lowered.includes('fetch')) {
     return t('auth.errors.network');
   }
-  if (lowered.includes('rate limit') || lowered.includes('too many')) {
+  if (lowered.includes('rate limit') || lowered.includes('too many') || code === 'over_email_send_rate_limit') {
     return t('auth.errors.rateLimit');
   }
   return t('auth.errors.generic');
+}
+
+export function isUnconfirmedEmailError(error) {
+  const message = String(error?.message || '').toLowerCase();
+  return message.includes('email not confirmed') || message.includes('not confirmed');
 }
 
 export function validateEmail(email) {

@@ -1,3 +1,4 @@
+import { activityEventsFromRemoteRows, mergeActivityEvents } from './activityEvents';
 import { normalizeTracking } from './watchlist';
 
 const SHOW_ID = /^trakt-show-[0-9]+$/;
@@ -385,7 +386,7 @@ export function applyQueue(base, queue) {
   return next;
 }
 
-export function stateFromRemote(mediaRows, episodeRows) {
+export function stateFromRemote(mediaRows, episodeRows, activityRows = []) {
   const state = normalizeTracking(null);
   const stamps = emptyStamps();
   (mediaRows || []).forEach((row) => {
@@ -453,19 +454,31 @@ export function stateFromRemote(mediaRows, episodeRows) {
       };
     }
   });
+  state.activityEvents = activityEventsFromRemoteRows(activityRows);
   return { state, stamps };
 }
 
 export function mergeRemoteAndLocal(remote, cache, lookup) {
   const remoteHasRows = hasTrackingRecords(remote.state);
   const onboardingComplete = cache ? Boolean(cache.state.onboardingComplete) : remoteHasRows;
+  const remoteActivity = remote.state?.activityEvents || remote.activityEvents || [];
   if (!cache) {
-    const state = adoptKeptEpisodes({ ...remote.state, onboardingComplete, demoMode: false });
-    return { state, server: { ...remote.state, onboardingComplete, demoMode: false }, stamps: remote.stamps || emptyStamps() };
+    const state = adoptKeptEpisodes({
+      ...remote.state,
+      activityEvents: mergeActivityEvents(remoteActivity, []),
+      onboardingComplete,
+      demoMode: false,
+    });
+    return {
+      state,
+      server: { ...remote.state, activityEvents: mergeActivityEvents(remoteActivity, []), onboardingComplete, demoMode: false },
+      stamps: remote.stamps || emptyStamps(),
+    };
   }
   const queue = planQueue(cache.server, cache.state, lookup);
   const state = adoptKeptEpisodes({
     ...applyQueue(remote.state, queue),
+    activityEvents: mergeActivityEvents(remoteActivity, cache.state.activityEvents),
     onboardingComplete,
     demoMode: false,
   });
@@ -479,7 +492,12 @@ export function mergeRemoteAndLocal(remote, cache, lookup) {
   });
   return {
     state,
-    server: { ...remote.state, onboardingComplete, demoMode: false },
+    server: {
+      ...remote.state,
+      activityEvents: mergeActivityEvents(remoteActivity, []),
+      onboardingComplete,
+      demoMode: false,
+    },
     stamps: remote.stamps || emptyStamps(),
   };
 }

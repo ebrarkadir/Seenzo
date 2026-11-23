@@ -7,7 +7,7 @@ import { demoTracking } from '../data/demoTracking';
 import { rememberMovie, rememberShow, resolveMovie as getMovie, resolveShow as getShow } from '../data/mediaLibrary';
 import { parseTraktMovieKey, parseTraktShowKey } from '../services/trakt/normalize';
 import { hydrateMovie, hydrateShow } from '../services/trakt/catalog';
-import { pullTracking, pushTracking, trackingClient } from '../services/supabase/trackingSync';
+import { pullTracking, pushActivityEvents, pushTracking, trackingClient } from '../services/supabase/trackingSync';
 import {
   emptyGuestState,
   isGuestFresh,
@@ -17,6 +17,13 @@ import {
   writeAccountEnvelope,
   writeGuestSession,
 } from './accountStore';
+import {
+  acknowledgeActivityEvents,
+  appendActivityEvents,
+  buildEpisodeActivityEvents,
+  buildMovieActivityEvents,
+  pendingActivityEvents,
+} from './activityEvents';
 import {
   adoptKeptEpisodes,
   applyQueue,
@@ -106,6 +113,9 @@ function emptyState() {
     movies: {},
     showRatings: {},
     episodeRatings: {},
+    episodeMeta: {},
+    keptEpisodes: {},
+    activityEvents: [],
   };
 }
 
@@ -180,11 +190,17 @@ export function TrackingProvider({ children }) {
       }
       const current = stateRef.current;
       const queue = queueForSync(serverRef.current, current, episodeLookup, { allowPush: !current.demoMode });
-      if (!hasQueueWork(queue)) {
+      const pendingActivity = !current.demoMode ? pendingActivityEvents(current) : [];
+      if (!hasQueueWork(queue) && !pendingActivity.length) {
         setSyncStatus('saved');
         return;
       }
-      if (queue.blocked.length && !Object.keys(queue.media).length && !Object.keys(queue.episodes).length) {
+      if (
+        queue.blocked.length
+        && !Object.keys(queue.media).length
+        && !Object.keys(queue.episodes).length
+        && !pendingActivity.length
+      ) {
         setSyncStatus('error');
         return;
       }
@@ -196,34 +212,50 @@ export function TrackingProvider({ children }) {
       flushRef.current = true;
       setSyncStatus('saving');
       try {
-        const result = await pushTracking(supabase, userId, queue, stampsRef.current);
-        if (!isCurrentScope(scopeRef.current, request)) {
-          return;
+        let conflicts = [];
+        let blocked = queue.blocked || [];
+        if (hasQueueWork(queue)) {
+          const result = await pushTracking(supabase, userId, queue, stampsRef.current);
+          if (!isCurrentScope(scopeRef.current, request)) {
+            return;
+          }
+          const ackedQueue = { media: {}, episodes: {}, blocked: [] };
+          result.acked.media.forEach((id) => {
+            if (queue.media[id]) {
+              ackedQueue.media[id] = queue.media[id];
+            }
+          });
+          result.acked.episodes.forEach((id) => {
+            if (queue.episodes[id]) {
+              ackedQueue.episodes[id] = queue.episodes[id];
+            }
+          });
+          serverRef.current = applyQueue(serverRef.current, ackedQueue);
+          const stamps = {
+            media: { ...stampsRef.current.media, ...result.stamps.media },
+            episodes: { ...stampsRef.current.episodes, ...result.stamps.episodes },
+          };
+          result.removed.media.forEach((id) => {
+            delete stamps.media[id];
+          });
+          result.removed.episodes.forEach((id) => {
+            delete stamps.episodes[id];
+          });
+          stampsRef.current = stamps;
+          conflicts = result.conflicts || [];
+          blocked = queue.blocked || [];
         }
-        const ackedQueue = { media: {}, episodes: {}, blocked: [] };
-        result.acked.media.forEach((id) => {
-          if (queue.media[id]) {
-            ackedQueue.media[id] = queue.media[id];
+        if (pendingActivity.length) {
+          const activityResult = await pushActivityEvents(supabase, userId, current);
+          if (!isCurrentScope(scopeRef.current, request)) {
+            return;
           }
-        });
-        result.acked.episodes.forEach((id) => {
-          if (queue.episodes[id]) {
-            ackedQueue.episodes[id] = queue.episodes[id];
+          if (activityResult.acked?.length) {
+            setState((prev) => acknowledgeActivityEvents(prev, activityResult.acked));
           }
-        });
-        serverRef.current = applyQueue(serverRef.current, ackedQueue);
-        const stamps = {
-          media: { ...stampsRef.current.media, ...result.stamps.media },
-          episodes: { ...stampsRef.current.episodes, ...result.stamps.episodes },
-        };
-        result.removed.media.forEach((id) => {
-          delete stamps.media[id];
-        });
-        result.removed.episodes.forEach((id) => {
-          delete stamps.episodes[id];
-        });
-        stampsRef.current = stamps;
-        setSyncStatus(result.conflicts.length || queue.blocked.length ? 'error' : 'saved');
+          // Missing activity table (migration not applied) must not block tracking sync.
+        }
+        setSyncStatus(conflicts.length || blocked.length ? 'error' : 'saved');
       } catch {
         if (isCurrentScope(scopeRef.current, request)) {
           setSyncStatus('error');
@@ -270,7 +302,7 @@ export function TrackingProvider({ children }) {
         if (!active || !isCurrentScope(scopeRef.current, request) || remoteRows.userId !== userId) {
           return;
         }
-        const remote = stateFromRemote(remoteRows.media, remoteRows.episodes);
+        const remote = stateFromRemote(remoteRows.media, remoteRows.episodes, remoteRows.activity);
         const merged = mergeRemoteAndLocal(remote, cache, episodeLookup);
         serverRef.current = merged.server;
         stampsRef.current = merged.stamps;
@@ -365,30 +397,52 @@ export function TrackingProvider({ children }) {
       return;
     }
     updateUndo(null);
+    const now = new Date().toISOString();
+    const added = current.added || (current.episodeId ? [current.episodeId] : []);
+    const removed = current.removed || [];
+    const undoEvents = [
+      ...buildEpisodeActivityEvents({
+        showId: current.showId,
+        episodeIds: added,
+        action: 'unwatched',
+        source: 'undo',
+        now,
+      }),
+      ...buildEpisodeActivityEvents({
+        showId: current.showId,
+        episodeIds: removed,
+        action: 'watched',
+        source: 'undo',
+        now,
+      }),
+    ];
     commit((prev) => {
+      let next = prev;
       if (current.created) {
         if (!prev.shows[current.showId]) {
-          return prev;
+          return appendActivityEvents(prev, undoEvents);
         }
         const shows = { ...prev.shows };
         delete shows[current.showId];
-        return { ...prev, shows };
+        next = { ...prev, shows };
+      } else {
+        const entry = prev.shows[current.showId];
+        if (!entry) {
+          return appendActivityEvents(prev, undoEvents);
+        }
+        next = {
+          ...prev,
+          shows: {
+            ...prev.shows,
+            [current.showId]: undoEpisodeChanges(entry, {
+              added,
+              removed,
+              previousIntent: current.previousIntent,
+            }),
+          },
+        };
       }
-      const entry = prev.shows[current.showId];
-      if (!entry) {
-        return prev;
-      }
-      return {
-        ...prev,
-        shows: {
-          ...prev.shows,
-          [current.showId]: undoEpisodeChanges(entry, {
-            added: current.added || (current.episodeId ? [current.episodeId] : []),
-            removed: current.removed || [],
-            previousIntent: current.previousIntent,
-          }),
-        },
-      };
+      return appendActivityEvents(next, undoEvents);
     });
   }, [commit, updateUndo]);
 
@@ -404,13 +458,20 @@ export function TrackingProvider({ children }) {
         return prev;
       }
       marked = result;
-      return {
+      const now = new Date().toISOString();
+      return appendActivityEvents({
         ...prev,
         shows: {
           ...prev.shows,
           [showId]: result.entry,
         },
-      };
+      }, buildEpisodeActivityEvents({
+        showId,
+        episodeIds: result.added || [result.marked.id],
+        action: 'watched',
+        source: 'individual',
+        now,
+      }));
     });
     if (marked) {
       updateUndo({
@@ -439,13 +500,30 @@ export function TrackingProvider({ children }) {
       if (result.marked) {
         marked = { ...result, created: !existing, previousIntent: existing?.intent || null };
       }
-      return {
+      const now = new Date().toISOString();
+      const events = [
+        ...buildEpisodeActivityEvents({
+          showId,
+          episodeIds: result.added,
+          action: 'watched',
+          source: 'individual',
+          now,
+        }),
+        ...buildEpisodeActivityEvents({
+          showId,
+          episodeIds: result.removed,
+          action: 'unwatched',
+          source: 'individual',
+          now,
+        }),
+      ];
+      return appendActivityEvents({
         ...prev,
         shows: {
           ...prev.shows,
           [showId]: result.entry,
         },
-      };
+      }, events);
     });
     if (marked) {
       updateUndo({
@@ -478,13 +556,30 @@ export function TrackingProvider({ children }) {
         result = null;
         return prev;
       }
-      return {
+      const now = new Date().toISOString();
+      const events = [
+        ...buildEpisodeActivityEvents({
+          showId,
+          episodeIds: result.added,
+          action: 'watched',
+          source: 'season_bulk',
+          now,
+        }),
+        ...buildEpisodeActivityEvents({
+          showId,
+          episodeIds: result.removed,
+          action: 'unwatched',
+          source: 'season_bulk',
+          now,
+        }),
+      ];
+      return appendActivityEvents({
         ...prev,
         shows: {
           ...prev.shows,
           [showId]: result.entry,
         },
-      };
+      }, events);
     });
     if (result) {
       updateUndo({
@@ -515,13 +610,20 @@ export function TrackingProvider({ children }) {
         result = null;
         return prev;
       }
-      return {
+      const now = new Date().toISOString();
+      return appendActivityEvents({
         ...prev,
         shows: {
           ...prev.shows,
           [showId]: result.entry,
         },
-      };
+      }, buildEpisodeActivityEvents({
+        showId,
+        episodeIds: result.added,
+        action: 'watched',
+        source: 'show_bulk',
+        now,
+      }));
     });
     if (result) {
       updateUndo({
@@ -584,7 +686,19 @@ export function TrackingProvider({ children }) {
     if (!getMovie(movieId)) {
       return;
     }
-    commit((prev) => applyMovieChanges(prev, movieId, changes));
+    commit((prev) => {
+      const watchedBefore = Boolean(prev.movies?.[movieId]?.watched);
+      const next = applyMovieChanges(prev, movieId, changes);
+      const watchedAfter = Boolean(next.movies?.[movieId]?.watched);
+      return appendActivityEvents(
+        next,
+        buildMovieActivityEvents(movieId, {
+          watchedBefore,
+          watchedAfter,
+          now: new Date().toISOString(),
+        })
+      );
+    });
   }, [commit]);
 
   const removeMovie = useCallback((movieId) => {
@@ -665,6 +779,9 @@ export function TrackingProvider({ children }) {
       movies: demoTracking.movies,
       showRatings: {},
       episodeRatings: demoTracking.episodeRatings || {},
+      episodeMeta: {},
+      keptEpisodes: {},
+      activityEvents: [],
     });
   }, [commit, updateUndo]);
 
@@ -677,6 +794,9 @@ export function TrackingProvider({ children }) {
       movies: {},
       showRatings: {},
       episodeRatings: {},
+      episodeMeta: {},
+      keptEpisodes: {},
+      activityEvents: [],
     });
   }, [commit, updateUndo]);
 
@@ -710,6 +830,7 @@ export function TrackingProvider({ children }) {
     episodeRatings: state.episodeRatings,
     episodeMeta: state.episodeMeta,
     keptEpisodes: state.keptEpisodes,
+    activityEvents: state.activityEvents,
     undo,
     dismissUndo,
     undoLast,

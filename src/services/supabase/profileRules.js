@@ -55,6 +55,7 @@ export function emptyProfile() {
     bannerPath: null,
     avatarUrl: null,
     bannerUrl: null,
+    isPublic: false,
     updatedAt: null,
   };
 }
@@ -72,6 +73,7 @@ export function normalizeProfileRow(row) {
     bannerPath: row.banner_path ?? row.bannerPath ?? null,
     avatarUrl: row.avatarUrl ?? null,
     bannerUrl: row.bannerUrl ?? null,
+    isPublic: Boolean(row.is_public ?? row.isPublic),
     updatedAt: row.updated_at ?? row.updatedAt ?? null,
   };
 }

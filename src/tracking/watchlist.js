@@ -256,6 +256,7 @@ export function normalizeTracking(raw) {
     episodeRatings: {},
     episodeMeta: {},
     keptEpisodes: {},
+    activityEvents: [],
   };
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return empty;
@@ -305,7 +306,55 @@ export function normalizeTracking(raw) {
     episodeRatings: ratingMap(raw.episodeRatings),
     episodeMeta: episodeMetaMap(raw.episodeMeta),
     keptEpisodes: keptEpisodeMap(raw.keptEpisodes),
+    activityEvents: normalizeActivityEventList(raw.activityEvents),
   };
+}
+
+function normalizeActivityEventList(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const byId = new Map();
+  value.forEach((entry) => {
+    if (!entry || typeof entry !== 'object') {
+      return;
+    }
+    const clientEventId = typeof entry.clientEventId === 'string' ? entry.clientEventId : '';
+    const mediaType = entry.mediaType;
+    const mediaId = entry.mediaId;
+    const action = entry.action;
+    const source = entry.source;
+    const clientLoggedAt = typeof entry.clientLoggedAt === 'string' ? entry.clientLoggedAt : '';
+    if (!clientEventId || !mediaType || !mediaId || !action || !source || !clientLoggedAt) {
+      return;
+    }
+    if (mediaType !== 'movie' && mediaType !== 'episode') {
+      return;
+    }
+    if (action !== 'watched' && action !== 'unwatched') {
+      return;
+    }
+    if (source !== 'individual' && source !== 'season_bulk' && source !== 'show_bulk' && source !== 'undo') {
+      return;
+    }
+    if (mediaType === 'movie' && !/^trakt-movie-[0-9]+$/.test(mediaId)) {
+      return;
+    }
+    if (mediaType === 'episode' && (!/^trakt-episode-[0-9]+$/.test(mediaId) || !/^trakt-show-[0-9]+$/.test(entry.showMediaId || ''))) {
+      return;
+    }
+    byId.set(clientEventId, {
+      clientEventId,
+      mediaType,
+      mediaId,
+      showMediaId: mediaType === 'episode' ? entry.showMediaId : null,
+      action,
+      source,
+      clientLoggedAt,
+      serverRecordedAt: typeof entry.serverRecordedAt === 'string' ? entry.serverRecordedAt : null,
+    });
+  });
+  return [...byId.values()];
 }
 
 function episodeMetaMap(value) {

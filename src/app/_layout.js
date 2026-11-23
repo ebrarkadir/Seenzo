@@ -29,7 +29,12 @@ function RootStack() {
       return;
     }
     const route = segments[0];
-    if (route !== 'onboarding' && route !== 'sign-in' && route !== 'sign-up') {
+    if (
+      route !== 'onboarding'
+      && route !== 'sign-in'
+      && route !== 'sign-up'
+      && route !== 'auth'
+    ) {
       router.replace('/onboarding');
     }
   }, [cacheRestored, loadError, onboardingComplete, ready, router, segments]);
@@ -78,8 +83,12 @@ function RootStack() {
       <Stack.Screen name="movie/[id]" options={{ title: '' }} />
       <Stack.Screen name="sign-in" options={{ title: t('auth.signInTitle') }} />
       <Stack.Screen name="sign-up" options={{ title: t('auth.signUpTitle') }} />
+      <Stack.Screen name="auth/callback" options={{ title: t('auth.callbackTitle'), headerBackVisible: false }} />
       <Stack.Screen name="edit-profile" options={{ title: t('profile.editProfile') }} />
+      <Stack.Screen name="users/search" options={{ title: t('social.searchTitle') }} />
+      <Stack.Screen name="user/[username]" options={{ title: t('social.profileTitle') }} />
       <Stack.Screen name="personal-ratings" options={{ title: t('personalRatings.title') }} />
+      <Stack.Screen name="insights" options={{ title: t('insights.title') }} />
     </Stack>
       </View>
     </View>

@@ -162,7 +162,12 @@ export function fetchEpisodePeople(traktShowId, seasonNumber, episodeNumber) {
   );
 }
 
-/** Episode-only actors: cast + guest stars, deduped by Trakt person id. No crew. */
+/**
+ * Best Performance candidates for an episode.
+ * Eligible: episode cast + episode guest_stars only.
+ * Never include show-wide cast, directing/writing/production, or other crew.
+ * Dual-role people remain eligible only via an explicit cast/guest credit.
+ */
 export function collectEpisodeActors(people) {
   const actors = [];
   const seen = new Set();
@@ -181,7 +186,12 @@ export function collectEpisodeActors(people) {
   return actors;
 }
 
-/** Movie cast only — never crew. Deduped by Trakt person id. */
+/**
+ * Best Performance candidates for a movie.
+ * Eligible: movie cast list only (Trakt `cast`).
+ * Never flatten crew departments into this list.
+ * Dual-role directors/writers stay eligible only when also listed in cast.
+ */
 export function collectMovieActors(people) {
   const actors = [];
   const seen = new Set();

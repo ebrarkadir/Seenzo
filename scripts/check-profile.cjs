@@ -92,6 +92,7 @@ expect('profile tab renders favorite shelves', profileScreen.includes('<Favorite
 expect('profile tab renders my activity once', (profileScreen.match(/<ProfileActivitySection/g) || []).length === 1);
 expect('profile has no my library section', !profileScreen.includes('ProfileLibrarySection') && !profileScreen.includes('ProfileStatsRow'));
 expect('activity opens archives and ratings', profileScreen.includes("/archive/shows") && profileScreen.includes("/archive/movies") && profileScreen.includes("/personal-ratings"));
+expect('activity opens insights', profileScreen.includes("router.push('/insights')"));
 expect('profile tab clears via auth scoped profile context', context.includes("key={userId || 'guest'}") && context.includes("userId ? profile : emptyProfile()"));
 expect('edit profile validates username uniqueness conflict code', editScreen.includes('username_taken') || editScreen.includes('profile.errors'));
 expect('uploads use base64 ArrayBuffer strategy', media.includes('base64-arraybuffer') && media.includes('EncodingType.Base64') && media.includes('.upload('));

@@ -13,12 +13,27 @@ export default function ProfileActivitySection({
   onPressShows,
   onPressMovies,
   onPressRatings,
+  onPressInsights,
 }) {
   const { t } = useTranslation();
 
   return (
     <View style={styles.wrap}>
-      <Text style={styles.heading}>{t('profile.myActivity')}</Text>
+      <View style={styles.headingRow}>
+        <Text style={styles.heading}>{t('profile.myActivity')}</Text>
+        {onPressInsights ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('insights.openFromProfile')}
+            onPress={onPressInsights}
+            hitSlop={8}
+            style={({ pressed }) => [styles.insightsLink, pressed && styles.pressed]}
+          >
+            <Text style={styles.insightsLinkText}>{t('insights.seeInsights')}</Text>
+            <Ionicons name="chevron-forward" size={14} color={colors.primary} />
+          </Pressable>
+        ) : null}
+      </View>
       <View style={styles.row}>
         <ActivityCard
           icon="tv-outline"
@@ -88,9 +103,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     gap: spacing.sm,
   },
+  headingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
   heading: {
     ...typography.subtitle,
     color: colors.text,
+    flexShrink: 1,
+  },
+  insightsLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingVertical: 4,
+    paddingHorizontal: 2,
+  },
+  insightsLinkText: {
+    ...typography.label,
+    color: colors.primary,
   },
   row: {
     flexDirection: 'row',

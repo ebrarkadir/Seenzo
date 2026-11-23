@@ -68,16 +68,23 @@ export function normalizeVoteStats(rows) {
   return { totalVotes, myPersonId, counts };
 }
 
+/**
+ * Best Performance order:
+ * 1) confirmed vote count descending
+ * 2) original cast/guest billing position ascending (stable Trakt order)
+ * Never sort by actor name. Zero votes keep cast billing among themselves.
+ */
 export function rankPerformanceVotes(people, stats) {
   const list = Array.isArray(people) ? people : [];
   const counts = stats?.counts || {};
   const totalVotes = Number(stats?.totalVotes) || 0;
   return list
-    .map((person) => {
+    .map((person, billingIndex) => {
       const voteCount = Number(counts[person.personId]) || 0;
       const percent = totalVotes > 0 ? Math.round((voteCount / totalVotes) * 100) : 0;
       return {
         ...person,
+        billingIndex,
         voteCount,
         percent,
         selected: stats?.myPersonId === person.personId,
@@ -87,7 +94,7 @@ export function rankPerformanceVotes(people, stats) {
       if (right.voteCount !== left.voteCount) {
         return right.voteCount - left.voteCount;
       }
-      return left.name.localeCompare(right.name);
+      return left.billingIndex - right.billingIndex;
     });
 }
 

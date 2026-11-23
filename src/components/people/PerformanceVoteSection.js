@@ -125,6 +125,7 @@ function PerformanceVoteBody({
 
   useLayoutEffect(() => {
     const targetId = pendingScrollPersonId.current;
+    // Only scroll after an explicit confirmed vote set pendingScrollPersonId.
     if (targetId == null || saving || loading) {
       return undefined;
     }

@@ -3,6 +3,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -25,6 +26,7 @@ import {
   normalizeDisplayName,
   normalizeUsername,
 } from '../services/supabase/profileRules';
+import { canPublishProfile } from '../services/supabase/socialRules';
 import { pickProfileImage } from '../services/supabase/profileMedia';
 import { colors, radii, spacing, typography } from '../theme';
 
@@ -59,6 +61,7 @@ function EditProfileForm() {
   const [displayName, setDisplayName] = useState(profile.displayName || '');
   const [username, setUsername] = useState(profile.username || '');
   const [bio, setBio] = useState(profile.bio || '');
+  const [isPublic, setIsPublic] = useState(Boolean(profile.isPublic));
   const [dirty, setDirty] = useState(false);
   const [localError, setLocalError] = useState(null);
   const [statusMessage, setStatusMessage] = useState(null);
@@ -72,6 +75,7 @@ function EditProfileForm() {
     setDisplayName(profile.displayName || '');
     setUsername(profile.username || '');
     setBio(profile.bio || '');
+    setIsPublic(Boolean(profile.isPublic));
     setLocalError(null);
     setStatusMessage(null);
   }
@@ -80,7 +84,8 @@ function EditProfileForm() {
     displayName: normalizeDisplayName(displayName),
     username: normalizeUsername(username),
     bio: normalizeBio(bio),
-  }), [bio, displayName, username]);
+    isPublic: Boolean(isPublic),
+  }), [bio, displayName, isPublic, username]);
 
   const headerProfile = useMemo(() => ({
     ...profile,
@@ -123,6 +128,10 @@ function EditProfileForm() {
     }
     if (!isValidBio(draftFields.bio)) {
       setLocalError('invalid_bio');
+      return;
+    }
+    if (!canPublishProfile({ username: draftFields.username, isPublic: draftFields.isPublic })) {
+      setLocalError('public_requires_username');
       return;
     }
     setLocalError(null);
@@ -262,6 +271,34 @@ function EditProfileForm() {
             multiline
             helper={t('profile.bioCount', { count: normalizeBio(bio).length, max: PROFILE_BIO_MAX })}
           />
+          <View style={styles.field}>
+            <Text style={styles.label}>{t('profile.visibility')}</Text>
+            <View style={styles.visibilityRow}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ selected: !isPublic }}
+                onPress={() => markDirty(setIsPublic)(false)}
+                style={[styles.visibilityChip, !isPublic && styles.visibilityChipActive]}
+              >
+                <Text style={[styles.visibilityText, !isPublic && styles.visibilityTextActive]}>
+                  {t('profile.visibilityPrivate')}
+                </Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ selected: isPublic }}
+                onPress={() => markDirty(setIsPublic)(true)}
+                style={[styles.visibilityChip, isPublic && styles.visibilityChipActive]}
+              >
+                <Text style={[styles.visibilityText, isPublic && styles.visibilityTextActive]}>
+                  {t('profile.visibilityPublic')}
+                </Text>
+              </Pressable>
+            </View>
+            <Text style={styles.meta}>
+              {t(isPublic ? 'profile.visibilityPublicHint' : 'profile.visibilityPrivateHint')}
+            </Text>
+          </View>
           <Text style={styles.meta}>{t('profile.emailReadOnly', { email })}</Text>
           {uploadProgress != null || pendingKind ? (
             <Text style={styles.meta}>
@@ -343,6 +380,32 @@ const styles = StyleSheet.create({
   },
   field: {
     gap: spacing.xs,
+  },
+  visibilityRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  visibilityChip: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.sm,
+  },
+  visibilityChipActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.surfaceElevated,
+  },
+  visibilityText: {
+    ...typography.label,
+    color: colors.textSecondary,
+  },
+  visibilityTextActive: {
+    color: colors.primary,
   },
   label: {
     ...typography.label,

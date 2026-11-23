@@ -38,7 +38,7 @@ expect('null person id returns -1', api.findPerformanceActorIndex(ranked, null),
 expect('layout uses fixed card width', api.performanceCardLayout(0).length, api.PERFORMANCE_CARD_WIDTH);
 expect('layout offset grows by stride', api.performanceCardLayout(2).offset, 2 * api.PERFORMANCE_CARD_STRIDE);
 
-expect('scroll after successful cast', api.shouldScrollToVotedActor({
+expect('scroll after successful cast to new ranked index', api.shouldScrollToVotedActor({
   clearing: false,
   personId: 20,
   requestCurrent: 3,
@@ -62,7 +62,8 @@ const voteUi = fs.readFileSync(
   'utf8'
 );
 expect('shared section used for movie and episode', voteUi.includes("mode === 'movie'") && voteUi.includes('FlatList'));
-expect('scrolls by person id index not zero', voteUi.includes('findPerformanceActorIndex') && voteUi.includes('viewPosition: 0'));
+expect('scrolls by person id to left-aligned new rank', voteUi.includes('findPerformanceActorIndex') && voteUi.includes('viewPosition: 0'));
+expect('scroll only uses pending vote person id', voteUi.includes('pendingScrollPersonId'));
 expect('handles scrollToIndex failure', voteUi.includes('onScrollToIndexFailed'));
 expect('clears pending scroll on failure', voteUi.includes('pendingScrollPersonId.current = null') && voteUi.includes('setStats(previousStats)'));
 expect('waits until saving finishes before scroll', voteUi.includes('saving || loading'));

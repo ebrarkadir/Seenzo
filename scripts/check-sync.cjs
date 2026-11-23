@@ -14,6 +14,7 @@ function loadModules(relativePaths, returned) {
 
 const sync = loadModules([
   'src/tracking/watchlist.js',
+  'src/tracking/activityEvents.js',
   'src/tracking/cloudState.js',
   'src/tracking/accountStore.js',
   'src/services/supabase/trackingSync.js',

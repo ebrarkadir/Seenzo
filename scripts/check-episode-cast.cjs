@@ -137,6 +137,20 @@ async function loadEpisode(slug, season, episode, extended) {
     expect('BB E01 client matches edge eligibility IDs', JSON.stringify(bbE1), JSON.stringify(bbE1EdgeIds));
     expect('show-wide GoT cast is much larger than episode', showGotIds.size > gotE1.length * 5, true);
     expect('episode cast is not equal to show-wide cast', gotE1.length === showGotIds.size, false);
+
+    const TIM_VAN_PATTEN = 32659;
+    const VINCE_GILLIGAN = 423003;
+    const gotE1CrewDirectors = (gotE1Client.crew?.directing || [])
+      .map((entry) => Number(entry?.person?.ids?.trakt))
+      .filter((id) => id > 0);
+    const bbE1CrewDirectors = (bbE1Client.crew?.directing || [])
+      .map((entry) => Number(entry?.person?.ids?.trakt))
+      .filter((id) => id > 0);
+    expect('GoT E01 lists Tim Van Patten in crew', gotE1CrewDirectors.includes(TIM_VAN_PATTEN), true);
+    expect('GoT E01 excludes Tim Van Patten from Best Performance ids', gotE1.includes(TIM_VAN_PATTEN), false);
+    expect('BB E01 lists Vince Gilligan in crew', bbE1CrewDirectors.includes(VINCE_GILLIGAN), true);
+    expect('BB E01 excludes Vince Gilligan from Best Performance ids', bbE1.includes(VINCE_GILLIGAN), false);
+    expect('GoT E01 and E02 never share identical candidate lists', JSON.stringify(gotE1) === JSON.stringify(gotE2), false);
   } catch (error) {
     expect(`live episode cast probe (${error.message})`, false, true);
   }

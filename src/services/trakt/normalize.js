@@ -159,6 +159,7 @@ export function toAppShow(payload, seasons, hydrated) {
     year: payload.year ?? null,
     overview: payload.overview || '',
     genres: Array.isArray(payload.genres) ? payload.genres : [],
+    runtime: typeof payload.runtime === 'number' ? payload.runtime : null,
     releaseStatus: mapReleaseStatus(payload.status),
     communityRating: typeof payload.rating === 'number' ? payload.rating : null,
     posterPath: pickPosterPath(payload.images),

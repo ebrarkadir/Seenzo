@@ -13,6 +13,7 @@ export default function FavoriteShelf({
   mediaType,
   items = [],
   editing = false,
+  readOnly = false,
   onToggleEdit,
   onPressEmpty,
   onPressFilled,
@@ -32,9 +33,11 @@ export default function FavoriteShelf({
     <View style={styles.block}>
       <View style={styles.header}>
         <Text style={styles.title}>{title}</Text>
-        <Pressable accessibilityRole="button" onPress={onToggleEdit} hitSlop={8}>
-          <Text style={styles.edit}>{editing ? t('common.done') : t('common.edit')}</Text>
-        </Pressable>
+        {readOnly ? null : (
+          <Pressable accessibilityRole="button" onPress={onToggleEdit} hitSlop={8}>
+            <Text style={styles.edit}>{editing ? t('common.done') : t('common.edit')}</Text>
+          </Pressable>
+        )}
       </View>
       <View style={styles.row}>
         {Array.from({ length: PROFILE_FAVORITES_LIMIT }, (_, index) => {
@@ -44,6 +47,14 @@ export default function FavoriteShelf({
             ? (mediaType === 'movie' ? resolveMovie(item.mediaId) : resolveShow(item.mediaId))
             : null;
           if (!item) {
+            if (readOnly) {
+              return (
+                <View
+                  key={`empty-${position}`}
+                  style={[styles.slot, styles.slotReadonly, { width: tileWidth, height: tileHeight }]}
+                />
+              );
+            }
             return (
               <Pressable
                 key={`empty-${position}`}
@@ -61,7 +72,7 @@ export default function FavoriteShelf({
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={media ? mediaTitle(t, media) : item.mediaId}
-                onPress={() => (editing ? onPressEmpty?.(position, item) : onPressFilled?.(item, media))}
+                onPress={() => (editing && !readOnly ? onPressEmpty?.(position, item) : onPressFilled?.(item, media))}
               >
                 {media ? (
                   <PosterThumb
@@ -76,7 +87,7 @@ export default function FavoriteShelf({
                   </View>
                 )}
               </Pressable>
-              {editing ? (
+              {editing && !readOnly ? (
                 <View style={styles.editRow}>
                   <Pressable
                     accessibilityRole="button"
@@ -148,6 +159,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  slotReadonly: {
+    borderStyle: 'solid',
+    opacity: 0.45,
   },
   editRow: {
     marginTop: 4,

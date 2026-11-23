@@ -44,6 +44,19 @@ expect('credited guest actor is eligible', rules.isEpisodeActorEligible(peoplePa
 expect('crew-only person is rejected', rules.isEpisodeActorEligible(peoplePayload, 44), false);
 expect('arbitrary person is rejected', rules.isEpisodeActorEligible(peoplePayload, 999), false);
 
+const dualEpisodePayload = {
+  cast: [{ person: { ids: { trakt: 297737 } } }],
+  guest_stars: [{ person: { ids: { trakt: 55 } } }],
+  crew: {
+    directing: [{ person: { ids: { trakt: 423003 } }, job: 'Director' }],
+    writing: [{ person: { ids: { trakt: 88 } }, job: 'Writer' }],
+  },
+};
+expect('episode cast eligible', rules.isEpisodeActorEligible(dualEpisodePayload, 297737), true);
+expect('episode guest eligible', rules.isEpisodeActorEligible(dualEpisodePayload, 55), true);
+expect('episode crew-only director rejected', rules.isEpisodeActorEligible(dualEpisodePayload, 423003), false);
+expect('episode crew-only writer rejected', rules.isEpisodeActorEligible(dualEpisodePayload, 88), false);
+
 expect(
   'cast request parses',
   rules.parseVoteRequestBody({
@@ -90,8 +103,20 @@ const ranked = votes.rankPerformanceVotes(
     { person_trakt_id: 11, vote_count: 2, total_votes: 5, my_person_trakt_id: 22 },
   ])
 );
-expect('ranking sorts by votes', ranked.map((item) => item.personId), [22, 11]);
+expect('ranking sorts by confirmed votes', ranked.map((item) => item.personId), [22, 11]);
 expect('percentages use total', ranked[0].percent, 60);
+expect('selected flag follows my vote', ranked[0].selected, true);
+expect(
+  'equal votes keep cast billing',
+  votes.rankPerformanceVotes(
+    [{ personId: 11, name: 'A' }, { personId: 22, name: 'B' }],
+    votes.normalizeVoteStats([
+      { person_trakt_id: 11, vote_count: 2, total_votes: 4, my_person_trakt_id: null },
+      { person_trakt_id: 22, vote_count: 2, total_votes: 4, my_person_trakt_id: null },
+    ])
+  ).map((item) => item.personId),
+  [11, 22]
+);
 
 const migration = fs.readFileSync(
   path.join(__dirname, '..', 'supabase/migrations/20261114180000_create_performance_votes.sql'),

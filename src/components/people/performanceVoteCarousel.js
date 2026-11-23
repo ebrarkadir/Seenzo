@@ -18,7 +18,10 @@ export function performanceCardLayout(index) {
   };
 }
 
-/** Decide whether a confirmed vote should trigger an auto-scroll. */
+/**
+ * After a confirmed cast vote, scroll to the selected actor's new ranked index.
+ * Skip on clear/remove and ignore stale responses / background refreshes.
+ */
 export function shouldScrollToVotedActor({ clearing, personId, requestCurrent, requestSeq }) {
   if (clearing || personId == null) {
     return false;

@@ -10,12 +10,14 @@ const AVATAR_SIZE = 88;
 export default function ProfileHeader({
   profile,
   guest = false,
+  readOnly = false,
   onEdit,
   onPressAvatar,
   onPressBanner,
   onImageError,
 }) {
   const { t } = useTranslation();
+  const editable = !guest && !readOnly;
   const displayName = guest
     ? t('profile.guestTitle')
     : (profile?.displayName || t('profile.unnamed'));
@@ -29,7 +31,7 @@ export default function ProfileHeader({
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={t('profile.editBanner')}
-        disabled={guest || !onPressBanner}
+        disabled={!editable || !onPressBanner}
         onPress={onPressBanner}
         style={styles.bannerPress}
       >
@@ -45,7 +47,7 @@ export default function ProfileHeader({
             <View style={styles.bannerGlow} />
           </View>
         )}
-        {!guest ? (
+        {editable ? (
           <View style={styles.bannerCamera}>
             <Ionicons name="camera" size={16} color={colors.text} />
           </View>
@@ -56,7 +58,7 @@ export default function ProfileHeader({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={t('profile.editAvatar')}
-          disabled={guest || !onPressAvatar}
+          disabled={!editable || !onPressAvatar}
           onPress={onPressAvatar}
           style={styles.avatarWrap}
         >
@@ -72,7 +74,7 @@ export default function ProfileHeader({
               <Ionicons name="person" size={34} color={colors.primary} />
             </View>
           )}
-          {!guest ? (
+          {editable ? (
             <View style={styles.avatarCamera}>
               <Ionicons name="camera" size={12} color={colors.onPrimary} />
             </View>
@@ -82,7 +84,7 @@ export default function ProfileHeader({
         <View style={styles.copy}>
           <View style={styles.titleRow}>
             <Text style={styles.name} numberOfLines={1}>{displayName}</Text>
-            {!guest && onEdit ? (
+            {editable && onEdit ? (
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={t('profile.editProfile')}

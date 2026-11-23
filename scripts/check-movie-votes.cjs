@@ -86,6 +86,38 @@ const normalized = people.normalizePeoplePayload({
 expect('collectMovieActors excludes crew', people.collectMovieActors(normalized).map((item) => item.personId), [11]);
 expect('collectMovieActors keeps characters', people.collectMovieActors(normalized)[0].characters, ['Cobb']);
 
+const dualRolePayload = {
+  cast: [
+    {
+      character: 'William Munny',
+      person: { name: 'Clint Eastwood', ids: { trakt: 7420 }, images: null },
+    },
+    {
+      character: 'Lead',
+      person: { name: 'Actor Only', ids: { trakt: 11 }, images: null },
+    },
+  ],
+  crew: {
+    directing: [
+      { job: 'Director', person: { name: 'Clint Eastwood', ids: { trakt: 7420 }, images: null } },
+      { job: 'Director', person: { name: 'Christopher Nolan', ids: { trakt: 411154 }, images: null } },
+    ],
+    writing: [
+      { job: 'Writer', person: { name: 'Writer Only', ids: { trakt: 99 }, images: null } },
+    ],
+  },
+};
+const dualNormalized = people.normalizePeoplePayload(dualRolePayload);
+const dualActors = people.collectMovieActors(dualNormalized).map((item) => item.personId).sort((a, b) => a - b);
+expect('cast-only actors eligible', dualActors.includes(11), true);
+expect('director with genuine acting credit eligible', dualActors.includes(7420), true);
+expect('crew-only director excluded', dualActors.includes(411154), false);
+expect('crew-only writer excluded', dualActors.includes(99), false);
+expect('movie eligibility ids match collector', [...rules.extractMovieActorIds(dualRolePayload)].sort((a, b) => a - b), dualActors);
+expect('server rejects crew-only director', rules.isMovieActorEligible(dualRolePayload, 411154), false);
+expect('server accepts dual-role director-actor', rules.isMovieActorEligible(dualRolePayload, 7420), true);
+expect('server rejects crew-only writer', rules.isMovieActorEligible(dualRolePayload, 99), false);
+
 const migration = fs.readFileSync(
   path.join(__dirname, '..', 'supabase/migrations/20261115220000_create_movie_performance_votes.sql'),
   'utf8'
@@ -108,6 +140,8 @@ expect('edge validates trakt movie people', edge.includes('actor_not_in_movie'),
 expect('edge rejects unauthenticated', edge.includes("error: 'unauthenticated'"), true);
 expect('edge rejects unwatched', edge.includes("error: 'movie_not_watched'"), true);
 expect('edge uses movie people path', edge.includes('/movies/'), true);
+expect('edge extractMovieActorIds reads cast only', /function extractMovieActorIds[\s\S]*?\(peoplePayload\?\.cast \|\| \[\]\)\.forEach/.test(edge), true);
+expect('edge extractMovieActorIds never reads crew', !/extractMovieActorIds[\s\S]*?peoplePayload\?\.crew/.test(edge), true);
 expect('edge does not write episode votes table', !edge.includes("from('performance_votes')"), true);
 
 const voteUi = fs.readFileSync(
@@ -155,9 +189,108 @@ expect(
   true
 );
 
-const failed = checks.filter((check) => !check.pass);
-if (failed.length) {
-  console.error(JSON.stringify(failed, null, 2));
-  process.exit(1);
+const https = require('https');
+
+function traktGet(pathname) {
+  const env = fs.readFileSync(path.join(__dirname, '..', '.env.local'), 'utf8');
+  const clientId = (env.match(/^EXPO_PUBLIC_TRAKT_CLIENT_ID=(.+)$/m) || [])[1]?.trim();
+  if (!clientId) {
+    throw new Error('missing_trakt_client_id');
+  }
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        hostname: 'api.trakt.tv',
+        path: pathname,
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'Seenzo/1.0.0',
+          'trakt-api-key': clientId,
+          'trakt-api-version': '2',
+        },
+      },
+      (res) => {
+        let body = '';
+        res.on('data', (chunk) => {
+          body += chunk;
+        });
+        res.on('end', () => {
+          if (res.statusCode < 200 || res.statusCode >= 300) {
+            reject(new Error(`trakt_${res.statusCode}`));
+            return;
+          }
+          try {
+            resolve(JSON.parse(body));
+          } catch (error) {
+            reject(error);
+          }
+        });
+      }
+    );
+    req.on('error', reject);
+    req.end();
+  });
 }
-console.log(`Movie vote checks passed (${checks.length})`);
+
+function crewIds(payload) {
+  const ids = new Set();
+  const crew = payload?.crew && typeof payload.crew === 'object' ? payload.crew : {};
+  Object.values(crew).forEach((list) => {
+    (Array.isArray(list) ? list : []).forEach((entry) => {
+      const id = Number(entry?.person?.ids?.trakt);
+      if (Number.isInteger(id) && id > 0) {
+        ids.add(id);
+      }
+    });
+  });
+  return ids;
+}
+
+(async () => {
+  try {
+    const NOLAN = 411154;
+    const EASTWOOD = 7420;
+    const inception = await traktGet('/movies/16662/people?extended=full');
+    const darkKnight = await traktGet('/movies/120/people?extended=full');
+    const unforgivenSearch = await traktGet('/search/movie?query=Unforgiven&years=1992');
+    const unforgivenId = unforgivenSearch?.[0]?.movie?.ids?.trakt;
+    if (!unforgivenId) {
+      throw new Error('unforgiven_not_found');
+    }
+    const unforgiven = await traktGet(`/movies/${unforgivenId}/people?extended=full`);
+
+    const inceptionActors = people.collectMovieActors(people.normalizePeoplePayload(inception));
+    const inceptionIds = inceptionActors.map((item) => item.personId);
+    const inceptionServer = [...rules.extractMovieActorIds(inception)];
+    expect('live Inception cast count', inception.cast.length > 20, true);
+    expect('live Inception has crew', crewIds(inception).size > 50, true);
+    expect('live Inception Nolan is crew-only', crewIds(inception).has(NOLAN) && !inceptionIds.includes(NOLAN), true);
+    expect('live Inception client excludes Nolan', inceptionIds.includes(NOLAN), false);
+    expect('live Inception server excludes Nolan', rules.isMovieActorEligible(inception, NOLAN), false);
+    expect(
+      'live Inception client/server actor ids match',
+      inceptionIds.slice().sort((a, b) => a - b),
+      inceptionServer.slice().sort((a, b) => a - b)
+    );
+
+    const darkActors = people.collectMovieActors(people.normalizePeoplePayload(darkKnight)).map((item) => item.personId);
+    expect('live Dark Knight excludes Nolan', darkActors.includes(NOLAN), false);
+    expect('live Dark Knight server excludes Nolan', rules.isMovieActorEligible(darkKnight, NOLAN), false);
+
+    const unActors = people.collectMovieActors(people.normalizePeoplePayload(unforgiven)).map((item) => item.personId);
+    expect('live Unforgiven dual-role Eastwood in cast', unActors.includes(EASTWOOD), true);
+    expect('live Unforgiven Eastwood eligible server-side', rules.isMovieActorEligible(unforgiven, EASTWOOD), true);
+    expect('live Unforgiven Eastwood also in crew', crewIds(unforgiven).has(EASTWOOD), true);
+  } catch (error) {
+    expect(`live movie cast probe (${error.message})`, false, true);
+  }
+
+  const failed = checks.filter((check) => !check.pass);
+  if (failed.length) {
+    console.error(JSON.stringify(failed, null, 2));
+    process.exit(1);
+  }
+  console.log(`Movie vote checks passed (${checks.length})`);
+})();

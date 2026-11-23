@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
-import { normalizeAuthEmail } from './messages';
+import { getAuthEmailRedirectTo } from './authRedirect';
+import { normalizeAuthEmail, validateEmail } from './messages';
 import { getSupabaseConfig } from '../services/supabase/config';
 import { getSupabase } from '../services/supabase/client';
 
@@ -63,6 +64,9 @@ export function AuthProvider({ children }) {
     const { data, error } = await supabase.auth.signUp({
       email: normalizeAuthEmail(email),
       password,
+      options: {
+        emailRedirectTo: getAuthEmailRedirectTo(),
+      },
     });
     if (error) {
       return { error };
@@ -73,6 +77,28 @@ export function AuthProvider({ children }) {
     }
     setSession(data.session ?? null);
     return { session: data.session ?? null, confirmationRequired: !data.session };
+  }, []);
+
+  const resendConfirmation = useCallback(async (email) => {
+    const supabase = getSupabase();
+    if (!supabase) {
+      return { error: { message: 'missing' } };
+    }
+    const normalized = normalizeAuthEmail(email);
+    if (!validateEmail(normalized)) {
+      return { error: { code: 'email_address_invalid', message: 'Email address is invalid' } };
+    }
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email: normalized,
+      options: {
+        emailRedirectTo: getAuthEmailRedirectTo(),
+      },
+    });
+    if (error) {
+      return { error };
+    }
+    return { ok: true };
   }, []);
 
   const signOut = useCallback(async () => {
@@ -95,8 +121,9 @@ export function AuthProvider({ children }) {
     email: session?.user?.email || '',
     signIn,
     signUp,
+    resendConfirmation,
     signOut,
-  }), [config, ready, session, signIn, signOut, signUp]);
+  }), [config, ready, resendConfirmation, session, signIn, signOut, signUp]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

@@ -13,17 +13,20 @@ import { colors, spacing, typography } from '../theme';
 export default function SignUpScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
-  const { config, signUp } = useAuth();
+  const { config, signUp, resendConfirmation } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [fieldError, setFieldError] = useState({});
   const [formError, setFormError] = useState('');
+  const [formNotice, setFormNotice] = useState('');
   const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
   const [confirmation, setConfirmation] = useState(false);
 
-  const finish = () => {
-    router.replace('/(tabs)/profile');
+  const finishAuthenticated = () => {
+    // New confirmed sessions resume onboarding when incomplete.
+    router.replace('/');
   };
 
   const submit = async () => {
@@ -43,6 +46,7 @@ export default function SignUpScreen() {
     }
     setFieldError(nextErrors);
     setFormError('');
+    setFormNotice('');
     if (Object.keys(nextErrors).length || !config.ready) {
       return;
     }
@@ -66,11 +70,32 @@ export default function SignUpScreen() {
         setConfirmation(true);
         return;
       }
-      finish();
+      finishAuthenticated();
     } catch (error) {
       setFormError(authErrorMessage(t, error));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const onResend = async () => {
+    if (resending || !config.ready) {
+      return;
+    }
+    setResending(true);
+    setFormError('');
+    setFormNotice('');
+    try {
+      const result = await resendConfirmation(email);
+      if (result.error) {
+        setFormError(authErrorMessage(t, result.error));
+        return;
+      }
+      setFormNotice(t('auth.resendSent'));
+    } catch (error) {
+      setFormError(authErrorMessage(t, error));
+    } finally {
+      setResending(false);
     }
   };
 
@@ -79,7 +104,14 @@ export default function SignUpScreen() {
       <ScrollView style={styles.screen} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + spacing.xl }]}>
         <Text style={styles.title}>{t('auth.confirmTitle')}</Text>
         <Text style={styles.body}>{t('auth.confirmBody')}</Text>
-        <PrimaryButton label={t('auth.backToSignIn')} onPress={() => router.replace('/sign-in')} />
+        {formNotice ? <Text style={styles.notice}>{formNotice}</Text> : null}
+        {formError ? <Text style={styles.error}>{formError}</Text> : null}
+        <PrimaryButton
+          label={resending ? t('auth.working') : t('auth.resendConfirmation')}
+          onPress={onResend}
+          disabled={resending || !config.ready}
+        />
+        <PrimaryButton label={t('auth.backToSignIn')} variant="secondary" onPress={() => router.replace('/sign-in')} />
       </ScrollView>
     );
   }
@@ -150,6 +182,10 @@ const styles = StyleSheet.create({
   body: {
     ...typography.body,
     color: colors.textSecondary,
+  },
+  notice: {
+    ...typography.caption,
+    color: colors.status.caughtUp,
   },
   error: {
     ...typography.caption,

@@ -8,6 +8,7 @@ export function showMediaIdFromTraktId(showTraktId) {
   return `trakt-show-${id}`;
 }
 
+/** Episode cast + guest_stars only. Never read crew departments for eligibility. */
 export function extractEpisodeActorIds(peoplePayload) {
   const ids = new Set();
   const push = (entry) => {

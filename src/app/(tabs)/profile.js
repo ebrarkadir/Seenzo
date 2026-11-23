@@ -8,6 +8,7 @@ import FavoritePickerModal from '../../components/profile/FavoritePickerModal';
 import FavoriteShelf from '../../components/profile/FavoriteShelf';
 import ProfileActivitySection from '../../components/profile/ProfileActivitySection';
 import ProfileHeader from '../../components/profile/ProfileHeader';
+import FindPeopleRow from '../../components/social/FindPeopleRow';
 import PrimaryButton from '../../components/ui/PrimaryButton';
 import { useProfile } from '../../profile/ProfileContext';
 import { colors, radii, spacing, typography } from '../../theme';
@@ -129,7 +130,14 @@ export default function ProfileScreen() {
         onPressShows={() => router.push('/archive/shows')}
         onPressMovies={() => router.push('/archive/movies')}
         onPressRatings={() => router.push('/personal-ratings')}
+        onPressInsights={() => router.push('/insights')}
       />
+
+      {signedIn ? (
+        <FindPeopleRow
+          onPress={() => router.push('/users/search')}
+        />
+      ) : null}
 
       <FavoriteShelf
         title={t('profile.favoriteShows')}
