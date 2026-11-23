@@ -243,6 +243,7 @@ expect('current scope is accepted', sync.isCurrentScope({ id: 2, key: 'user-b' }
     return {
       filters,
       auth: {
+        getSession: async () => ({ data: { session: { user: { id: userId } } }, error: null }),
         getUser: async () => ({ data: { user: { id: userId } }, error: null }),
       },
       from(table) {
@@ -270,6 +271,7 @@ expect('current scope is accepted', sync.isCurrentScope({ id: 2, key: 'user-b' }
   const migration = fs.readFileSync(path.join(__dirname, '..', 'supabase/migrations/20261114153000_create_tracking_schema.sql'), 'utf8');
   expect('sync client does not use the service role', source.includes('service_role') || source.includes('sb_secret'), false);
   expect('sync client reads the authenticated user', source.includes('auth.getUser'), true);
+  expect('pull prefers local session before getUser', source.includes('auth.getSession'), true);
   expect('media policy stays owner scoped', migration.includes('create policy media_entries_select_own'), true);
   expect('episode policy stays owner scoped', migration.includes('create policy episode_entries_select_own'), true);
   expect('records exist helper sees account A', sync.hasTrackingRecords(remoteA.state), true);

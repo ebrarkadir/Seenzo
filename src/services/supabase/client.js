@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 
 import { getSupabaseConfig } from './config';
+import { ensurePkceWebCrypto } from './webCrypto';
 
 let client = null;
 let lifecycleBound = false;
@@ -29,6 +30,8 @@ export function getSupabase() {
   if (!getSupabaseConfig().ready) {
     return null;
   }
+  // Re-assert before createClient so auth-js uses S256, never plain.
+  ensurePkceWebCrypto();
   client = createClient(
     process.env.EXPO_PUBLIC_SUPABASE_URL.trim(),
     process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY.trim(),

@@ -1,46 +1,101 @@
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { I18nextProvider, useTranslation } from 'react-i18next';
 
 import i18n from '../i18n';
 import { loadMediaLibrary } from '../data/mediaLibrary';
+import { startupLog } from '../diagnostics/startup';
 import { colors, spacing, typography } from '../theme';
 import { AuthProvider, useAuth } from '../auth/AuthContext';
 import { ProfileProvider } from '../profile/ProfileContext';
 import { TrackingProvider, useTracking } from '../tracking/TrackingContext';
 import PrimaryButton from '../components/ui/PrimaryButton';
 
+function isAuthFlowRoute(route) {
+  return route === 'welcome'
+    || route === 'sign-in'
+    || route === 'sign-up'
+    || route === 'auth';
+}
+
 function RootStack() {
   const { t } = useTranslation();
   const { ready, onboardingComplete, loadError, cacheRestored, syncStatus, retryLoad, retrySync } = useTracking();
-  const { signOut } = useAuth();
+  const { ready: authReady, session, signOut } = useAuth();
+  const signedIn = Boolean(session?.user?.id);
   const [catalogReady, setCatalogReady] = useState(false);
   const segments = useSegments();
   const router = useRouter();
 
   useEffect(() => {
-    loadMediaLibrary().finally(() => setCatalogReady(true));
+    startupLog('root_layout_mounted');
+    loadMediaLibrary().finally(() => {
+      setCatalogReady(true);
+      startupLog('catalog_ready');
+    });
   }, []);
 
   useEffect(() => {
-    if (!ready || onboardingComplete || (loadError && !cacheRestored)) {
+    // Bridgeless Fabric does not emit ReactRootView CONTENT_APPEARED, so Expo's
+    // auto-hide path is unreliable — release the native splash once gates open.
+    if (!authReady || !ready || !catalogReady) {
+      return;
+    }
+    startupLog('splash_hide');
+    SplashScreen.hide();
+  }, [authReady, catalogReady, ready]);
+
+  useEffect(() => {
+    startupLog('root_gate', {
+      authReady,
+      trackingReady: ready,
+      catalogReady,
+      signedIn,
+      onboardingComplete,
+      route: segments[0] || 'none',
+      loadError,
+      cacheRestored,
+    });
+  }, [authReady, cacheRestored, catalogReady, loadError, onboardingComplete, ready, segments, signedIn]);
+
+  useEffect(() => {
+    if (!authReady || !ready || (loadError && !cacheRestored)) {
       return;
     }
     const route = segments[0];
-    if (
-      route !== 'onboarding'
-      && route !== 'sign-in'
-      && route !== 'sign-up'
-      && route !== 'auth'
-    ) {
-      router.replace('/onboarding');
+    if (onboardingComplete) {
+      if (route === 'welcome' || route === 'onboarding') {
+        startupLog('redirect', { to: 'tabs', reason: 'onboarding_complete' });
+        router.replace('/(tabs)');
+      }
+      return;
     }
-  }, [cacheRestored, loadError, onboardingComplete, ready, router, segments]);
+    if (signedIn) {
+      // Keep auth/callback reachable while the session is established.
+      if (route !== 'onboarding' && route !== 'auth') {
+        startupLog('redirect', { to: 'onboarding', reason: 'signed_in_incomplete' });
+        router.replace('/onboarding');
+      }
+      return;
+    }
+    // Signed-out incomplete users stay on index (gateway) or explicit auth routes.
+    // Prefer index over /welcome so a blank Redirect screen cannot cover the UI.
+    if (route && route !== 'index' && !isAuthFlowRoute(route)) {
+      startupLog('redirect', { to: 'index', reason: 'signed_out' });
+      router.replace('/');
+    }
+  }, [authReady, cacheRestored, loadError, onboardingComplete, ready, router, segments, signedIn]);
 
-  if (!ready || !catalogReady) {
-    return <View style={{ flex: 1, backgroundColor: colors.background }} />;
+  if (!authReady || !ready || !catalogReady) {
+    return (
+      <View style={styles.boot}>
+        <ActivityIndicator color={colors.primary} />
+        <Text style={styles.bootText}>{t('sync.loading')}</Text>
+      </View>
+    );
   }
 
   if (loadError && !cacheRestored) {
@@ -69,9 +124,13 @@ function RootStack() {
         headerShadowVisible: false,
         headerTitleStyle: { fontWeight: '600' },
         contentStyle: { backgroundColor: colors.background },
+        // Fade leaves a full-window overlay View on Android Fabric that
+        // intercepts touches while the gateway remains visible underneath.
+        animation: 'none',
       }}
     >
-      <Stack.Screen name="index" options={{ headerShown: false }} />
+      <Stack.Screen name="index" options={{ headerShown: false, animation: 'none' }} />
+      <Stack.Screen name="welcome" options={{ headerShown: false, gestureEnabled: false, animation: 'none' }} />
       <Stack.Screen name="onboarding" options={{ headerShown: false, gestureEnabled: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="profile" options={{ headerShown: false }} />
@@ -99,6 +158,18 @@ const styles = StyleSheet.create({
   frame: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  boot: {
+    flex: 1,
+    backgroundColor: colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.md,
+    padding: spacing.lg,
+  },
+  bootText: {
+    ...typography.body,
+    color: colors.textSecondary,
   },
   blocked: {
     flex: 1,

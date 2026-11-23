@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 
 import { getAuthEmailRedirectTo } from './authRedirect';
 import { normalizeAuthEmail, validateEmail } from './messages';
+import { startupLog } from '../diagnostics/startup';
 import { getSupabaseConfig } from '../services/supabase/config';
 import { getSupabase } from '../services/supabase/client';
 
@@ -13,21 +14,48 @@ export function AuthProvider({ children }) {
   const [ready, setReady] = useState(!config.ready);
 
   useEffect(() => {
-    const supabase = getSupabase();
-    if (!supabase) {
-      return undefined;
-    }
     let active = true;
+    let supabase;
+    try {
+      supabase = getSupabase();
+    } catch (error) {
+      startupLog('auth_client_failed', { reason: error?.message || 'client' });
+      Promise.resolve().then(() => {
+        if (!active) {
+          return;
+        }
+        setSession(null);
+        setReady(true);
+      });
+      return () => {
+        active = false;
+      };
+    }
+    if (!supabase) {
+      startupLog('auth_ready', { session: false, configReady: false });
+      Promise.resolve().then(() => {
+        if (!active) {
+          return;
+        }
+        setReady(true);
+      });
+      return () => {
+        active = false;
+      };
+    }
     supabase.auth.getSession().then(({ data, error }) => {
       if (!active) {
         return;
       }
-      setSession(error ? null : data.session ?? null);
+      const next = error ? null : data.session ?? null;
+      setSession(next);
       setReady(true);
+      startupLog('auth_ready', { session: Boolean(next?.user?.id) });
     }).catch(() => {
       if (active) {
         setSession(null);
         setReady(true);
+        startupLog('auth_ready', { session: false, recovered: true });
       }
     });
     const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {

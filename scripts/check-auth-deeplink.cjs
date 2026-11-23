@@ -61,6 +61,7 @@ expect('app.json scheme seenzo', appJson.expo.scheme, 'seenzo');
 const client = fs.readFileSync(path.join(__dirname, '..', 'src/services/supabase/client.js'), 'utf8');
 expect('client uses pkce', client.includes("flowType: 'pkce'"));
 expect('client keeps detectSessionInUrl false', client.includes('detectSessionInUrl: false'));
+expect('client installs webCrypto before supabase', client.includes("from './webCrypto'"));
 
 const authContext = fs.readFileSync(path.join(__dirname, '..', 'src/auth/AuthContext.js'), 'utf8');
 expect('signUp sets emailRedirectTo', authContext.includes('emailRedirectTo: getAuthEmailRedirectTo()'));
@@ -71,6 +72,7 @@ const callbackRoute = fs.readFileSync(path.join(__dirname, '..', 'src/app/auth/c
 expect('callback route exists and processes once', callbackRoute.includes('completeAuthCallbackFromUrl') && callbackRoute.includes('handledKey'));
 expect('callback never logs tokens', !/console\.(log|info|debug|warn).*token|console\.(log|info|debug).*url/i.test(callbackRoute));
 expect('callback navigates home', callbackRoute.includes("router.replace('/')"));
+expect('callback has failure timeout', callbackRoute.includes('link_timeout'));
 
 const signUp = fs.readFileSync(path.join(__dirname, '..', 'src/app/sign-up.js'), 'utf8');
 const signIn = fs.readFileSync(path.join(__dirname, '..', 'src/app/sign-in.js'), 'utf8');
@@ -81,9 +83,10 @@ expect('auth success uses index gate', signUp.includes("router.replace('/')") &&
 const layout = fs.readFileSync(path.join(__dirname, '..', 'src/app/_layout.js'), 'utf8');
 expect('layout allows auth callback while onboarding incomplete', layout.includes("route !== 'auth'"));
 expect('layout registers callback screen', layout.includes('auth/callback'));
+expect('layout registers signed-out welcome gateway', layout.includes('name="welcome"'));
 
 const en = fs.readFileSync(path.join(__dirname, '..', 'src/i18n/locales/en.json'), 'utf8');
-expect('i18n has resend and link errors', en.includes('resendConfirmation') && en.includes('link_expired') && en.includes('link_device_mismatch'));
+expect('i18n has resend and link errors', en.includes('resendConfirmation') && en.includes('link_expired') && en.includes('link_device_mismatch') && en.includes('link_timeout'));
 
 const failed = checks.filter((check) => !check.pass);
 if (failed.length) {

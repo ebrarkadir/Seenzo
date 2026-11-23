@@ -229,7 +229,7 @@ export default function ProfileScreen() {
           variant="secondary"
           onPress={() => confirm(t('profile.restartTitle'), t('profile.restartMessage'), () => {
             restartOnboarding();
-            router.replace('/onboarding');
+            router.replace('/');
           })}
         />
         <PrimaryButton

@@ -39,3 +39,17 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Supabase CLI local cache (not source)
+supabase/.temp/
+
+# Windows MAX_PATH CMake junction (local build workaround only)
+/n/
+
+# Emulator / UI dump diagnostics (never commit)
+seenzo-*.png
+ui-dump.xml
+uidump.xml
+.tmp_*.png
+.tmp_*.xml
+scripts/parse-ui-dump.js

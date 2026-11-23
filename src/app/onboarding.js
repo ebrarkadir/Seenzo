@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
+import { useAuth } from '../auth/AuthContext';
 import PrimaryButton from '../components/ui/PrimaryButton';
 import SearchField from '../components/ui/SearchField';
 import PosterTile, { posterSize } from '../components/media/PosterTile';
@@ -16,7 +17,9 @@ import { useTracking } from '../tracking/TrackingContext';
 import { episodeCode, releasedEpisodes } from '../tracking/status';
 
 export default function OnboardingScreen() {
-  const { loadDemo, completeOnboarding } = useTracking();
+  const { session } = useAuth();
+  const { ready, onboardingComplete, completeOnboarding } = useTracking();
+  const signedIn = Boolean(session?.user?.id);
   const [step, setStep] = useState(1);
   const [query, setQuery] = useState('');
   const [selectedShows, setSelectedShows] = useState({});
@@ -25,6 +28,19 @@ export default function OnboardingScreen() {
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState(null);
   const config = getTraktConfigStatus();
+
+  useEffect(() => {
+    if (!ready) {
+      return;
+    }
+    if (onboardingComplete) {
+      router.replace('/(tabs)');
+      return;
+    }
+    if (!signedIn) {
+      router.replace('/');
+    }
+  }, [onboardingComplete, ready, signedIn]);
 
   useEffect(() => {
     if (step === 1 || !config.ready) {
@@ -62,10 +78,9 @@ export default function OnboardingScreen() {
     router.replace('/(tabs)');
   };
 
-  const startDemo = () => {
-    loadDemo();
-    router.replace('/(tabs)');
-  };
+  if (!ready || !signedIn || onboardingComplete) {
+    return <View style={styles.safe} />;
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom', 'left', 'right']}>
@@ -75,7 +90,7 @@ export default function OnboardingScreen() {
         ))}
       </View>
       {step === 1 ? (
-        <WelcomeStep onStart={() => setStep(2)} onDemo={startDemo} />
+        <WelcomeStep onStart={() => setStep(2)} />
       ) : null}
       {step === 2 ? (
         <ShowStep
@@ -173,7 +188,7 @@ export default function OnboardingScreen() {
   );
 }
 
-function WelcomeStep({ onStart, onDemo }) {
+function WelcomeStep({ onStart }) {
   const { t } = useTranslation();
   return (
     <View style={styles.welcome}>
@@ -181,8 +196,6 @@ function WelcomeStep({ onStart, onDemo }) {
       <Text style={styles.welcomeTitle}>{t('onboarding.welcomeTitle')}</Text>
       <Text style={styles.welcomeBody}>{t('onboarding.welcomeBody')}</Text>
       <PrimaryButton label={t('onboarding.getStarted')} onPress={onStart} />
-      <PrimaryButton label={t('onboarding.tryDemo')} onPress={onDemo} variant="secondary" />
-      <Text style={styles.hint}>{t('onboarding.tryDemoHint')}</Text>
     </View>
   );
 }

@@ -1,27 +1,83 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import * as Linking from 'expo-linking';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 
+import { useAuth } from '../../auth/AuthContext';
 import { completeAuthCallbackFromUrl } from '../../auth/authCallback';
 import { getAuthEmailRedirectTo, isAuthCallbackUrl } from '../../auth/authRedirect';
 import PrimaryButton from '../../components/ui/PrimaryButton';
 import { colors, spacing, typography } from '../../theme';
 
+const RESOLVE_TIMEOUT_MS = 12000;
+
 export default function AuthCallbackScreen() {
   const { t } = useTranslation();
   const params = useLocalSearchParams();
   const linkingUrl = Linking.useURL();
+  const { session } = useAuth();
   const [errorCode, setErrorCode] = useState(null);
   const [status, setStatus] = useState('working');
   const handledKey = useRef(null);
+  const finishedRef = useRef(false);
+  const paramsRef = useRef(params);
+  const sessionRef = useRef(session);
+  const paramSignature = useMemo(() => serializeParams(params), [params]);
 
   useEffect(() => {
-    let active = true;
+    paramsRef.current = params;
+  }, [params]);
+
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
+
+  const finishSuccess = () => {
+    if (finishedRef.current) {
+      return;
+    }
+    finishedRef.current = true;
+    setStatus('done');
+    router.replace('/');
+  };
+
+  const finishError = (code) => {
+    if (finishedRef.current) {
+      return;
+    }
+    finishedRef.current = true;
+    setStatus('error');
+    setErrorCode(code || 'link_invalid');
+  };
+
+  // If AuthContext already has a session (exchange completed / restored), leave the spinner.
+  useEffect(() => {
+    if (session?.user?.id && status === 'working') {
+      finishSuccess();
+    }
+  }, [session, status]);
+
+  // Never leave "Confirming…" forever when the deep link payload never arrives.
+  useEffect(() => {
+    if (status !== 'working') {
+      return undefined;
+    }
+    const timer = setTimeout(() => {
+      finishError('link_timeout');
+    }, RESOLVE_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [status]);
+
+  useEffect(() => {
+    let cancelled = false;
 
     const run = async () => {
-      const url = await resolveCallbackUrl(linkingUrl, params);
+      const url = await resolveCallbackUrl(linkingUrl, paramsRef.current);
+      if (cancelled || finishedRef.current) {
+        return;
+      }
+      // URL may arrive on a later linking event — keep waiting until the timeout.
       if (!url) {
         return;
       }
@@ -29,37 +85,33 @@ export default function AuthCallbackScreen() {
         return;
       }
       handledKey.current = url;
+
       try {
         const result = await completeAuthCallbackFromUrl(url);
-        if (!active) {
+        // Success must navigate even if this effect was cleaned up (param identity races).
+        if (result.session) {
+          finishSuccess();
           return;
         }
         if (result.status === 'duplicate') {
-          setStatus('done');
-          router.replace('/');
+          if (sessionRef.current?.user?.id) {
+            finishSuccess();
+            return;
+          }
+          finishError('link_used');
           return;
         }
-        if (!result.session) {
-          setStatus('error');
-          setErrorCode('link_invalid');
-          return;
-        }
-        setStatus('done');
-        router.replace('/');
+        finishError('link_invalid');
       } catch (error) {
-        if (!active) {
-          return;
-        }
-        setStatus('error');
-        setErrorCode(error?.code || 'link_invalid');
+        finishError(error?.code || 'link_invalid');
       }
     };
 
     run();
     return () => {
-      active = false;
+      cancelled = true;
     };
-  }, [linkingUrl, params]);
+  }, [linkingUrl, paramSignature]);
 
   if (status === 'error') {
     return (
@@ -84,6 +136,17 @@ export default function AuthCallbackScreen() {
       <Text style={styles.body}>{t('auth.callbackWorking')}</Text>
     </View>
   );
+}
+
+function serializeParams(params) {
+  return Object.keys(params || {})
+    .sort()
+    .map((key) => {
+      const value = params[key];
+      const text = Array.isArray(value) ? value[0] : value;
+      return `${key}=${text == null ? '' : String(text)}`;
+    })
+    .join('&');
 }
 
 async function resolveCallbackUrl(linkingUrl, params) {

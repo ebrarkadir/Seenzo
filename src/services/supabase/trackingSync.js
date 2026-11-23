@@ -7,6 +7,12 @@ const EPISODE_COLUMNS = 'show_media_id, episode_id, season_number, episode_numbe
 const ACTIVITY_COLUMNS = 'client_event_id, media_type, media_id, show_media_id, action, source, client_logged_at, server_recorded_at';
 
 async function currentUserId(supabase) {
+  // Prefer the local session so account bootstrap cannot hang on a network getUser().
+  const local = await supabase.auth.getSession();
+  const localId = local.data?.session?.user?.id;
+  if (localId) {
+    return localId;
+  }
   const { data, error } = await supabase.auth.getUser();
   if (error || !data?.user?.id) {
     const failure = new Error('auth');

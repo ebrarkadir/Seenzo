@@ -5,6 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../auth/AuthContext';
 import { demoTracking } from '../data/demoTracking';
 import { rememberMovie, rememberShow, resolveMovie as getMovie, resolveShow as getShow } from '../data/mediaLibrary';
+import { startupLog } from '../diagnostics/startup';
 import { parseTraktMovieKey, parseTraktShowKey } from '../services/trakt/normalize';
 import { hydrateMovie, hydrateShow } from '../services/trakt/catalog';
 import { pullTracking, pushActivityEvents, pushTracking, trackingClient } from '../services/supabase/trackingSync';
@@ -58,6 +59,19 @@ import {
 } from './watchlist';
 
 const TrackingContext = createContext(null);
+const ACCOUNT_LOAD_TIMEOUT_MS = 15000;
+
+function withTimeout(promise, ms, code = 'timeout') {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      const error = new Error(code);
+      error.code = code;
+      reject(error);
+    }, ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
 
 function episodeLookup(state, episodeId) {
   const showIds = new Set(Object.keys(state.shows || {}));
@@ -276,6 +290,7 @@ export function TrackingProvider({ children }) {
     const request = { id: scopeRef.current.id + 1, key: appliedKey };
     scopeRef.current = request;
     let active = true;
+    startupLog('tracking_load_start', { scope: appliedKey === 'guest' ? 'guest' : 'account' });
     (async () => {
       try {
         if (appliedKey === 'guest') {
@@ -291,6 +306,10 @@ export function TrackingProvider({ children }) {
           setCacheRestored(true);
           setLoadError(false);
           setReady(true);
+          startupLog('tracking_ready', {
+            scope: 'guest',
+            onboardingComplete: Boolean(guest.onboardingComplete),
+          });
           return;
         }
         const cache = await readAccountEnvelope(AsyncStorage, userId);
@@ -298,9 +317,13 @@ export function TrackingProvider({ children }) {
         if (!supabase) {
           throw new Error('config');
         }
-        const remoteRows = await pullTracking(supabase);
-        if (!active || !isCurrentScope(scopeRef.current, request) || remoteRows.userId !== userId) {
+        const remoteRows = await withTimeout(pullTracking(supabase), ACCOUNT_LOAD_TIMEOUT_MS);
+        if (!active || !isCurrentScope(scopeRef.current, request)) {
           return;
+        }
+        if (remoteRows.userId !== userId) {
+          // Do not leave ready=false forever on an unexpected auth mismatch.
+          throw new Error('auth');
         }
         const remote = stateFromRemote(remoteRows.media, remoteRows.episodes, remoteRows.activity);
         const merged = mergeRemoteAndLocal(remote, cache, episodeLookup);
@@ -310,11 +333,17 @@ export function TrackingProvider({ children }) {
         setCacheRestored(true);
         setLoadError(false);
         setReady(true);
+        startupLog('tracking_ready', {
+          scope: 'account',
+          onboardingComplete: Boolean(merged.state.onboardingComplete),
+          cache: Boolean(cache),
+        });
         rehydrateCatalog(merged.state);
-      } catch {
+      } catch (error) {
         if (!active || !isCurrentScope(scopeRef.current, request)) {
           return;
         }
+        startupLog('tracking_load_error', { code: error?.code || error?.message || 'error' });
         if (appliedKey !== 'guest' && userId) {
           try {
             const cache = await readAccountEnvelope(AsyncStorage, userId);
@@ -329,6 +358,11 @@ export function TrackingProvider({ children }) {
               setLoadError(false);
               setSyncStatus('error');
               setReady(true);
+              startupLog('tracking_ready', {
+                scope: 'account',
+                onboardingComplete: Boolean(cache.state?.onboardingComplete),
+                cacheFallback: true,
+              });
               rehydrateCatalog(cache.state);
               return;
             }
@@ -343,6 +377,7 @@ export function TrackingProvider({ children }) {
         setLoadError(true);
         setSyncStatus('error');
         setReady(true);
+        startupLog('tracking_ready', { scope: appliedKey === 'guest' ? 'guest' : 'account', loadError: true });
       }
     })();
     return () => {

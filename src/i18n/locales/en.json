@@ -408,6 +408,10 @@
       "unfollow_failed": "Could not unfollow that profile."
     }
   },
+  "authGateway": {
+    "title": "Your TV and movie tracker",
+    "body": "Sign in to sync your library, create an account, or try a sample library on this device."
+  },
   "auth": {
     "signInTitle": "Sign in",
     "signUpTitle": "Create account",
@@ -452,10 +456,12 @@
       "link_used": "That confirmation link was already used. Sign in instead.",
       "link_invalid": "That confirmation link is invalid. Request a new email and try again.",
       "link_device_mismatch": "Open the confirmation email on the same device where you created the account.",
+      "link_timeout": "Confirmation is taking too long. Sign in, or request a new confirmation email.",
       "generic": "The account request could not be completed."
     }
   },
   "sync": {
+    "loading": "Loading your library…",
     "saving": "Saving to your account…",
     "saved": "Saved to your account.",
     "error": "Some account changes are still on this device.",
