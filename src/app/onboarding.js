@@ -33,12 +33,14 @@ export default function OnboardingScreen() {
     if (!ready) {
       return;
     }
-    if (onboardingComplete) {
-      router.replace('/(tabs)');
-      return;
-    }
+    // Signed-out users always leave onboarding for AuthGateway, even if a
+    // stale onboardingComplete flag is still true during logout transitions.
     if (!signedIn) {
       router.replace('/');
+      return;
+    }
+    if (onboardingComplete) {
+      router.replace('/(tabs)');
     }
   }, [onboardingComplete, ready, signedIn]);
 

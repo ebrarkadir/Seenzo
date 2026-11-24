@@ -45,9 +45,13 @@ export default function MovieDetailSheet({
     return null;
   }
 
+  // Android Fabric cannot reliably stack two RN Modals. Hide the movie sheet
+  // while RatingSheet is open so Rate receives presses.
+  const movieSheetVisible = Boolean(visible) && !ratingOpen;
+
   return (
     <>
-      <Modal visible={visible} transparent animationType="slide" onRequestClose={closeSheet}>
+      <Modal visible={movieSheetVisible} transparent animationType="slide" onRequestClose={closeSheet}>
         <View style={styles.backdrop}>
           <Pressable
             accessibilityRole="button"
@@ -123,6 +127,10 @@ export default function MovieDetailSheet({
         visible={ratingOpen && watched && Boolean(movie)}
         title={t('rating.movie')}
         mediaTitle={movie?.title}
+        mediaType="movie"
+        mediaId={movie?.id}
+        posterPath={movie?.posterPath || null}
+        posterUri={movie?.poster || null}
         value={draft}
         savedValue={movieRating}
         onChange={setDraft}

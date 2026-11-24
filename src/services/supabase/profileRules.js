@@ -56,6 +56,8 @@ export function emptyProfile() {
     avatarUrl: null,
     bannerUrl: null,
     isPublic: false,
+    allowProfileDiscovery: false,
+    shareActivityWithFollowers: false,
     updatedAt: null,
   };
 }
@@ -74,6 +76,10 @@ export function normalizeProfileRow(row) {
     avatarUrl: row.avatarUrl ?? null,
     bannerUrl: row.bannerUrl ?? null,
     isPublic: Boolean(row.is_public ?? row.isPublic),
+    allowProfileDiscovery: Boolean(row.allow_profile_discovery ?? row.allowProfileDiscovery),
+    shareActivityWithFollowers: Boolean(
+      row.share_activity_with_followers ?? row.shareActivityWithFollowers
+    ),
     updatedAt: row.updated_at ?? row.updatedAt ?? null,
   };
 }

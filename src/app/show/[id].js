@@ -418,15 +418,14 @@ export default function ShowDetailScreen() {
         onClose={() => setMenuOpen(false)}
       />
       <EpisodeDetailSheet
-        visible={Boolean(selectedEpisode)}
+        visible={Boolean(selectedEpisode) && ratingTarget?.type !== 'episode'}
         show={show}
         episode={selectedEpisode}
         watched={selectedEpisode ? watched.has(selectedEpisode.id) : false}
         rating={selectedEpisode ? episodeRatings?.[selectedEpisode.id] ?? null : null}
         onClose={() => {
-          const closingEpisodeRating = ratingTarget?.type === 'episode';
           setSelectedEpisodeId(null);
-          if (closingEpisodeRating) {
+          if (ratingTarget?.type === 'episode') {
             setRatingTarget(null);
             setDraft(null);
           }
@@ -441,7 +440,14 @@ export default function ShowDetailScreen() {
             return;
           }
           setDraft(episodeRatings?.[selectedEpisode.id] ?? null);
-          setRatingTarget({ type: 'episode', id: selectedEpisode.id, title: `${t('common.episodeCode', episodeCode(selectedEpisode))} · ${episodeTitle(t, selectedEpisode)}` });
+          // Hide episode Modal before opening RatingSheet (Android nested-Modal tap bug).
+          setRatingTarget({
+            type: 'episode',
+            id: selectedEpisode.id,
+            title: `${t('common.episodeCode', episodeCode(selectedEpisode))} · ${episodeTitle(t, selectedEpisode)}`,
+            season: selectedEpisode.season,
+            number: selectedEpisode.number,
+          });
         }}
       />
       <RatingSheet
@@ -452,6 +458,21 @@ export default function ShowDetailScreen() {
             ? ratingTarget.title
             : show?.title
         }
+        mediaType={ratingTarget?.type === 'episode' ? 'episode' : 'show'}
+        mediaId={ratingTarget?.type === 'episode' ? ratingTarget.id : show?.id}
+        showMediaId={ratingTarget?.type === 'episode' ? show?.id : null}
+        seasonNumber={
+          ratingTarget?.type === 'episode'
+            ? ratingTarget.season ?? selectedEpisode?.season ?? null
+            : null
+        }
+        episodeNumber={
+          ratingTarget?.type === 'episode'
+            ? ratingTarget.number ?? selectedEpisode?.number ?? null
+            : null
+        }
+        posterPath={show?.posterPath || null}
+        posterUri={show?.poster || null}
         value={draft}
         savedValue={
           ratingTarget?.type === 'episode'

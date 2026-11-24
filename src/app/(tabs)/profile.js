@@ -1,6 +1,16 @@
-import { useMemo, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  Alert,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import { useAuth } from '../../auth/AuthContext';
@@ -9,8 +19,11 @@ import FavoriteShelf from '../../components/profile/FavoriteShelf';
 import ProfileActivitySection from '../../components/profile/ProfileActivitySection';
 import ProfileHeader from '../../components/profile/ProfileHeader';
 import FindPeopleRow from '../../components/social/FindPeopleRow';
+import FollowCountsRow from '../../components/social/FollowCountsRow';
 import PrimaryButton from '../../components/ui/PrimaryButton';
 import { useProfile } from '../../profile/ProfileContext';
+import { fetchFollowCounts } from '../../services/supabase/social';
+import { emptyFollowCounts } from '../../services/supabase/socialRules';
 import { colors, radii, spacing, typography } from '../../theme';
 import { countPersonalRatings } from '../../tracking/personalRatings';
 import { isMovieWatchlisted } from '../../tracking/watchlist';
@@ -18,6 +31,7 @@ import { useTracking } from '../../tracking/TrackingContext';
 
 export default function ProfileScreen() {
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const { ready: authReady, email, signOut } = useAuth();
   const {
     userId,
@@ -36,15 +50,34 @@ export default function ProfileScreen() {
     showRatings,
     episodeRatings,
     demoMode,
-    loadDemo,
-    clearLocalData,
-    restartOnboarding,
     syncStatus,
   } = useTracking();
   const signedIn = Boolean(userId);
   const [editShows, setEditShows] = useState(false);
   const [editMovies, setEditMovies] = useState(false);
   const [picker, setPicker] = useState(null);
+  const [followCounts, setFollowCounts] = useState(emptyFollowCounts());
+  const [logoutConfirm, setLogoutConfirm] = useState(false);
+  const [logoutWorking, setLogoutWorking] = useState(false);
+
+  useEffect(() => {
+    if (!signedIn || !userId) {
+      return undefined;
+    }
+    let active = true;
+    fetchFollowCounts(userId)
+      .then((counts) => {
+        if (active) setFollowCounts(counts);
+      })
+      .catch(() => {
+        if (active) setFollowCounts(emptyFollowCounts());
+      });
+    return () => {
+      active = false;
+    };
+  }, [signedIn, userId]);
+
+  const visibleFollowCounts = signedIn ? followCounts : emptyFollowCounts();
 
   const stats = useMemo(() => {
     if (signedIn && demoMode) {
@@ -71,13 +104,6 @@ export default function ProfileScreen() {
     };
   }, [demoMode, episodeRatings, movies, showRatings, shows, signedIn]);
 
-  const confirm = (title, message, onConfirm) => {
-    Alert.alert(title, message, [
-      { text: t('common.cancel'), style: 'cancel' },
-      { text: t('common.confirm'), style: 'destructive', onPress: onConfirm },
-    ]);
-  };
-
   const openPicker = (mediaType, position) => {
     if (!signedIn) {
       router.push('/sign-in');
@@ -102,89 +128,109 @@ export default function ProfileScreen() {
     }
   };
 
+  const bottomPad = Math.max(insets.bottom, spacing.sm) + 72;
+
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <ProfileHeader
-        guest={!signedIn}
-        profile={profile}
-        onEdit={() => router.push('/edit-profile')}
-        onPressAvatar={() => router.push('/edit-profile')}
-        onPressBanner={() => router.push('/edit-profile')}
-      />
-
-      {authReady && !signedIn ? (
-        <View style={styles.sectionPad}>
-          <PrimaryButton label={t('profile.signIn')} onPress={() => router.push('/sign-in')} />
-          <PrimaryButton label={t('profile.createAccount')} variant="secondary" onPress={() => router.push('/sign-up')} />
-        </View>
-      ) : null}
-
-      {loading ? <Text style={styles.metaPad}>{t('profile.loading')}</Text> : null}
-
-      <ProfileActivitySection
-        showsCount={stats.showsCount}
-        episodesWatched={stats.episodesWatched}
-        moviesWatched={stats.moviesWatched}
-        moviesToWatch={stats.moviesToWatch}
-        ratingsCount={stats.ratingsCount}
-        onPressShows={() => router.push('/archive/shows')}
-        onPressMovies={() => router.push('/archive/movies')}
-        onPressRatings={() => router.push('/personal-ratings')}
-        onPressInsights={() => router.push('/insights')}
-      />
-
-      {signedIn ? (
-        <FindPeopleRow
-          onPress={() => router.push('/users/search')}
+    <View style={styles.screen}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}
+      >
+        <ProfileHeader
+          guest={!signedIn}
+          profile={profile}
+          onEdit={() => router.push('/edit-profile')}
+          onPressAvatar={() => router.push('/edit-profile')}
+          onPressBanner={() => router.push('/edit-profile')}
         />
-      ) : null}
 
-      <FavoriteShelf
-        title={t('profile.favoriteShows')}
-        mediaType="show"
-        items={favorites.shows}
-        editing={editShows}
-        onToggleEdit={() => {
-          if (!signedIn) {
-            router.push('/sign-in');
-            return;
-          }
-          setEditShows((value) => !value);
-        }}
-        onPressEmpty={(position) => openPicker('show', position)}
-        onPressFilled={(item) => router.push(`/show/${item.mediaId}`)}
-        onRemove={(position) => clearFavoriteAt('show', position)}
-        onMoveLeft={(position) => moveFavorite('show', position, position - 1)}
-        onMoveRight={(position) => moveFavorite('show', position, position + 1)}
-      />
+        {authReady && !signedIn ? (
+          <View style={styles.sectionPad}>
+            <PrimaryButton label={t('profile.signIn')} onPress={() => router.push('/sign-in')} />
+            <PrimaryButton label={t('profile.createAccount')} variant="secondary" onPress={() => router.push('/sign-up')} />
+          </View>
+        ) : null}
 
-      <FavoriteShelf
-        title={t('profile.favoriteMovies')}
-        mediaType="movie"
-        items={favorites.movies}
-        editing={editMovies}
-        onToggleEdit={() => {
-          if (!signedIn) {
-            router.push('/sign-in');
-            return;
-          }
-          setEditMovies((value) => !value);
-        }}
-        onPressEmpty={(position) => openPicker('movie', position)}
-        onPressFilled={(item) => router.push(`/movie/${item.mediaId}`)}
-        onRemove={(position) => clearFavoriteAt('movie', position)}
-        onMoveLeft={(position) => moveFavorite('movie', position, position - 1)}
-        onMoveRight={(position) => moveFavorite('movie', position, position + 1)}
-      />
+        {loading ? <Text style={styles.metaPad}>{t('profile.loading')}</Text> : null}
 
-      {setupUnavailable && signedIn ? (
-        <Text style={styles.metaPad}>{t('profile.favoritesUnavailableBody')}</Text>
-      ) : null}
-      {saving ? <Text style={styles.metaPad}>{t('profile.saving')}</Text> : null}
-
-      <View style={styles.panel}>
         {signedIn ? (
-          <>
+          <FollowCountsRow
+            followers={visibleFollowCounts.followers}
+            following={visibleFollowCounts.following}
+            onPressFollowers={() => router.push({
+              pathname: '/users/connections',
+              params: { userId, direction: 'followers' },
+            })}
+            onPressFollowing={() => router.push({
+              pathname: '/users/connections',
+              params: { userId, direction: 'following' },
+            })}
+          />
+        ) : null}
+
+        <ProfileActivitySection
+          showsCount={stats.showsCount}
+          episodesWatched={stats.episodesWatched}
+          moviesWatched={stats.moviesWatched}
+          moviesToWatch={stats.moviesToWatch}
+          ratingsCount={stats.ratingsCount}
+          onPressShows={() => router.push('/archive/shows')}
+          onPressMovies={() => router.push('/archive/movies')}
+          onPressRatings={() => router.push('/personal-ratings')}
+          onPressInsights={() => router.push('/insights')}
+        />
+
+        {signedIn ? (
+          <FindPeopleRow
+            onPress={() => router.push({ pathname: '/(tabs)/social', params: { section: 'people' } })}
+          />
+        ) : null}
+
+        <FavoriteShelf
+          title={t('profile.favoriteShows')}
+          mediaType="show"
+          items={favorites.shows}
+          editing={editShows}
+          onToggleEdit={() => {
+            if (!signedIn) {
+              router.push('/sign-in');
+              return;
+            }
+            setEditShows((value) => !value);
+          }}
+          onPressEmpty={(position) => openPicker('show', position)}
+          onPressFilled={(item) => router.push(`/show/${item.mediaId}`)}
+          onRemove={(position) => clearFavoriteAt('show', position)}
+          onMoveLeft={(position) => moveFavorite('show', position, position - 1)}
+          onMoveRight={(position) => moveFavorite('show', position, position + 1)}
+        />
+
+        <FavoriteShelf
+          title={t('profile.favoriteMovies')}
+          mediaType="movie"
+          items={favorites.movies}
+          editing={editMovies}
+          onToggleEdit={() => {
+            if (!signedIn) {
+              router.push('/sign-in');
+              return;
+            }
+            setEditMovies((value) => !value);
+          }}
+          onPressEmpty={(position) => openPicker('movie', position)}
+          onPressFilled={(item) => router.push(`/movie/${item.mediaId}`)}
+          onRemove={(position) => clearFavoriteAt('movie', position)}
+          onMoveLeft={(position) => moveFavorite('movie', position, position - 1)}
+          onMoveRight={(position) => moveFavorite('movie', position, position + 1)}
+        />
+
+        {setupUnavailable && signedIn ? (
+          <Text style={styles.metaPad}>{t('profile.favoritesUnavailableBody')}</Text>
+        ) : null}
+        {saving ? <Text style={styles.metaPad}>{t('profile.saving')}</Text> : null}
+
+        {signedIn ? (
+          <View style={styles.panel}>
             <Text style={styles.kicker}>{t('profile.accountSettings')}</Text>
             <Text style={styles.panelBody}>{email}</Text>
             <Text style={styles.panelBody}>
@@ -195,49 +241,85 @@ export default function ProfileScreen() {
               variant="secondary"
               onPress={() => router.push('/edit-profile')}
             />
-            <PrimaryButton
-              label={t('profile.logout')}
-              variant="secondary"
-              onPress={() => confirm(t('profile.logoutTitle'), t('profile.logoutMessage'), () => {
-                signOut();
-              })}
-            />
-          </>
+          </View>
         ) : null}
 
-        <Text style={styles.kicker}>{t('profile.creditsKicker')}</Text>
-        <Text style={styles.panelBody}>{t('profile.traktAttribution')}</Text>
+        <View style={styles.creditsBlock}>
+          <Text style={styles.kicker}>{t('profile.creditsKicker')}</Text>
+          <Text style={styles.panelBody}>{t('profile.traktAttribution')}</Text>
+        </View>
 
-        <Text style={styles.kicker}>{t('profile.demoKicker')}</Text>
-        <Text style={styles.panelTitle}>{t('profile.demoTitle')}</Text>
-        <Text style={styles.panelBody}>{t('profile.demoNote')}</Text>
-        <Text style={styles.mode}>{demoMode ? t('profile.demoOn') : t('profile.demoOff')}</Text>
-        <PrimaryButton
-          label={t('profile.loadDemo')}
-          onPress={() => confirm(t('profile.loadDemoTitle'), t('profile.loadDemoMessage'), () => {
-            loadDemo();
-            router.replace('/(tabs)');
-          })}
-        />
-        <PrimaryButton
-          label={t('profile.clearData')}
-          variant="secondary"
-          onPress={() => confirm(t('profile.clearTitle'), t(signedIn ? 'profile.clearAccountMessage' : 'profile.clearMessage'), clearLocalData)}
-        />
-        <PrimaryButton
-          label={t('profile.restartOnboarding')}
-          variant="secondary"
-          onPress={() => confirm(t('profile.restartTitle'), t('profile.restartMessage'), () => {
-            restartOnboarding();
-            router.replace('/');
-          })}
-        />
-        <PrimaryButton
-          label={t('profile.traktTest')}
-          variant="secondary"
-          onPress={() => router.push('/trakt-test')}
-        />
-      </View>
+        {signedIn ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('profile.logout')}
+            onPress={() => {
+              if (typeof __DEV__ !== 'undefined' && __DEV__) {
+                console.log('[logout] button_pressed', { via: 'open_confirm' });
+              }
+              setLogoutConfirm(true);
+            }}
+            style={({ pressed }) => [styles.logoutRow, pressed && styles.logoutPressed]}
+          >
+            <View style={styles.logoutIconWrap}>
+              <Ionicons name="log-out-outline" size={20} color={colors.textSecondary} />
+            </View>
+            <Text style={styles.logoutLabel}>{t('profile.logout')}</Text>
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          </Pressable>
+        ) : null}
+      </ScrollView>
+
+      <Modal
+        visible={logoutConfirm}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!logoutWorking) {
+            setLogoutConfirm(false);
+          }
+        }}
+      >
+        <View style={styles.confirmBackdrop}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('common.cancel')}
+            style={styles.confirmDismiss}
+            disabled={logoutWorking}
+            onPress={() => setLogoutConfirm(false)}
+          />
+          <View style={styles.confirmCard}>
+            <Text style={styles.panelTitle}>{t('profile.logoutTitle')}</Text>
+            <Text style={styles.panelBody}>{t('profile.logoutMessage')}</Text>
+            <PrimaryButton
+              label={logoutWorking ? t('auth.working') : t('common.confirm')}
+              disabled={logoutWorking}
+              onPress={async () => {
+                if (logoutWorking) {
+                  return;
+                }
+                setLogoutWorking(true);
+                if (typeof __DEV__ !== 'undefined' && __DEV__) {
+                  console.log('[logout] button_pressed', { via: 'in_app_confirm' });
+                }
+                try {
+                  await signOut();
+                  router.replace('/');
+                } finally {
+                  setLogoutWorking(false);
+                  setLogoutConfirm(false);
+                }
+              }}
+            />
+            <PrimaryButton
+              label={t('common.cancel')}
+              variant="secondary"
+              disabled={logoutWorking}
+              onPress={() => setLogoutConfirm(false)}
+            />
+          </View>
+        </View>
+      </Modal>
 
       <FavoritePickerModal
         visible={Boolean(picker)}
@@ -246,7 +328,7 @@ export default function ProfileScreen() {
         onClose={() => setPicker(null)}
         onSelect={onSelectFavorite}
       />
-    </ScrollView>
+    </View>
   );
 }
 
@@ -255,9 +337,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  scroll: {
+    flex: 1,
+  },
   content: {
     gap: spacing.md,
-    paddingBottom: spacing.xl,
   },
   sectionPad: {
     paddingHorizontal: spacing.md,
@@ -277,6 +361,11 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     gap: spacing.sm,
   },
+  creditsBlock: {
+    marginHorizontal: spacing.md,
+    paddingHorizontal: spacing.xs,
+    gap: spacing.xs,
+  },
   kicker: {
     ...typography.label,
     color: colors.primary,
@@ -291,8 +380,50 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textSecondary,
   },
-  mode: {
-    ...typography.label,
-    color: colors.text,
+  logoutRow: {
+    marginTop: spacing.sm,
+    marginHorizontal: spacing.md,
+    minHeight: 52,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.xs,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  logoutPressed: {
+    opacity: 0.75,
+  },
+  logoutIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceElevated,
+  },
+  logoutLabel: {
+    ...typography.body,
+    color: colors.textSecondary,
+    flex: 1,
+  },
+  confirmBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(12, 16, 21, 0.72)',
+  },
+  confirmDismiss: {
+    flex: 1,
+  },
+  confirmCard: {
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.xl,
+    padding: spacing.md,
+    borderRadius: radii.lg,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: spacing.sm,
   },
 });

@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next';
 import PublicProfileView from '../../components/social/PublicProfileView';
 import PrimaryButton from '../../components/ui/PrimaryButton';
 import { useAuth } from '../../auth/AuthContext';
+import { useTracking } from '../../tracking/TrackingContext';
 import { rememberMovie, rememberShow, resolveMovie, resolveShow } from '../../data/mediaLibrary';
 import { hydrateMovie, hydrateShow } from '../../services/trakt/catalog';
 import { parseTraktMovieKey, parseTraktShowKey } from '../../services/trakt/normalize';
@@ -21,11 +22,14 @@ import {
   followUser,
   unfollowUser,
 } from '../../services/supabase/social';
+import { cancelFollowRequest } from '../../services/supabase/socialGraph';
+import { RELATIONSHIP, resolveRelationshipAction } from '../../services/supabase/socialRules';
 import { colors, spacing, typography } from '../../theme';
 
 export default function PublicUserProfileScreen() {
   const { t } = useTranslation();
   const { session } = useAuth();
+  const { demoMode } = useTracking();
   const params = useLocalSearchParams();
   const username = String(params.username || '');
   const [payload, setPayload] = useState(null);
@@ -52,7 +56,9 @@ export default function PublicUserProfileScreen() {
     let active = true;
     fetchPublicProfileByUsername(username)
       .then(async (next) => {
-        await hydrateFavorites(next.favorites);
+        if (!next.limited) {
+          await hydrateFavorites(next.favorites);
+        }
         if (!active) {
           return;
         }
@@ -79,40 +85,85 @@ export default function PublicUserProfileScreen() {
     setAttempt((value) => value + 1);
   };
 
+  const openConnections = (direction) => {
+    if (!payload?.profile?.userId) return;
+    router.push({
+      pathname: '/users/connections',
+      params: {
+        userId: payload.profile.userId,
+        direction,
+        title: direction === 'following' ? 'following' : 'followers',
+      },
+    });
+  };
+
   const onToggleFollow = useCallback(async () => {
     if (!payload?.profile?.userId || payload.isSelf || followLoading) {
       return;
     }
+    if (demoMode) {
+      Alert.alert(t('social.demoBlockedTitle'), t('social.demoBlockedBody'));
+      return;
+    }
     setFollowLoading(true);
     try {
-      if (payload.isFollowing) {
+      const action = payload.relationshipAction;
+      if (action === RELATIONSHIP.FOLLOWING) {
         await unfollowUser(payload.profile.userId);
-        setPayload((current) => (
-          current
-            ? {
-              ...current,
-              isFollowing: false,
-              followCounts: {
-                ...current.followCounts,
-                followers: Math.max(0, (current.followCounts?.followers || 0) - 1),
-              },
-            }
-            : current
-        ));
+        setPayload((current) => {
+          if (!current) return current;
+          const relationship = {
+            ...current.relationship,
+            isFollowing: false,
+            outgoingRequestId: null,
+          };
+          return {
+            ...current,
+            isFollowing: false,
+            relationship,
+            relationshipAction: resolveRelationshipAction(relationship),
+            followCounts: {
+              ...current.followCounts,
+              followers: Math.max(0, (current.followCounts?.followers || 0) - 1),
+            },
+          };
+        });
+      } else if (action === RELATIONSHIP.REQUESTED) {
+        await cancelFollowRequest(payload.profile.userId);
+        setPayload((current) => {
+          if (!current) return current;
+          const relationship = {
+            ...current.relationship,
+            outgoingRequestId: null,
+          };
+          return {
+            ...current,
+            relationship,
+            relationshipAction: resolveRelationshipAction(relationship),
+          };
+        });
       } else {
-        await followUser(payload.profile.userId);
-        setPayload((current) => (
-          current
-            ? {
-              ...current,
-              isFollowing: true,
-              followCounts: {
-                ...current.followCounts,
-                followers: (current.followCounts?.followers || 0) + 1,
-              },
-            }
-            : current
-        ));
+        const result = await followUser(payload.profile.userId);
+        setPayload((current) => {
+          if (!current) return current;
+          const relationship = {
+            ...current.relationship,
+            isFollowing: Boolean(result.isFollowing),
+            outgoingRequestId: result.requestId || null,
+          };
+          return {
+            ...current,
+            isFollowing: Boolean(result.isFollowing),
+            relationship,
+            relationshipAction: resolveRelationshipAction(relationship),
+            followCounts: {
+              ...current.followCounts,
+              followers: result.isFollowing
+                ? (current.followCounts?.followers || 0) + 1
+                : current.followCounts?.followers || 0,
+            },
+          };
+        });
       }
     } catch (requestError) {
       Alert.alert(
@@ -122,7 +173,7 @@ export default function PublicUserProfileScreen() {
     } finally {
       setFollowLoading(false);
     }
-  }, [followLoading, payload, t]);
+  }, [demoMode, followLoading, payload, t]);
 
   if (loading) {
     return (
@@ -153,9 +204,12 @@ export default function PublicUserProfileScreen() {
         stats={payload.stats}
         followCounts={payload.followCounts}
         isSelf={payload.isSelf}
-        isFollowing={payload.isFollowing}
+        limited={payload.limited}
+        relationshipAction={payload.relationshipAction}
         followLoading={followLoading}
         onToggleFollow={onToggleFollow}
+        onPressFollowers={() => openConnections('followers')}
+        onPressFollowing={() => openConnections('following')}
         onPressFavorite={(item) => {
           if (!item?.mediaId) {
             return;

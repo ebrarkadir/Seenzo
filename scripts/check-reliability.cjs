@@ -18,7 +18,7 @@ function read(relativePath) {
 const auth = read('src/auth/AuthContext.js');
 expect(
   'signOut always clears local session',
-  auth.includes('const { error } = await supabase.auth.signOut();')
+  auth.includes("signOut({ scope: 'local' })")
     && auth.includes('setSession(null);')
     && !auth.includes('if (!error) {\n      setSession(null);')
 );

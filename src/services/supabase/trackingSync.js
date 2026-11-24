@@ -218,9 +218,24 @@ export async function pushActivityEvents(supabase, expectedUserId, state) {
   if (!rows.length) {
     return { userId, acked: [] };
   }
-  const { error: insertError } = await supabase
+  let upsertRows = rows;
+  let { error: insertError } = await supabase
     .from('watch_activity_events')
-    .upsert(rows, { onConflict: 'user_id,client_event_id', ignoreDuplicates: true });
+    .upsert(upsertRows, { onConflict: 'user_id,client_event_id', ignoreDuplicates: true });
+  // Social V3 introduces episode_catchup; until that migration is applied, retry without it.
+  if (
+    insertError
+    && /episode_catchup|source_check|check constraint/i.test(`${insertError.message || ''} ${insertError.details || ''}`)
+  ) {
+    upsertRows = rows.filter((row) => row.source !== 'episode_catchup');
+    if (!upsertRows.length) {
+      return { userId, acked: [], deferred: true };
+    }
+    const retry = await supabase
+      .from('watch_activity_events')
+      .upsert(upsertRows, { onConflict: 'user_id,client_event_id', ignoreDuplicates: true });
+    insertError = retry.error;
+  }
   if (insertError) {
     // Keep local pending events until the activity migration is applied.
     if (insertError.code === 'PGRST205' || /watch_activity_events/i.test(insertError.message || '')) {

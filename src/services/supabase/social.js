@@ -11,10 +11,18 @@ import {
   buildUsernameSearchPattern,
   emptyFollowCounts,
   emptyPublicStats,
+  emptyRelationship,
   normalizeDiscoveryProfile,
   normalizeFollowCounts,
   normalizePublicStats,
+  resolveRelationshipAction,
 } from './socialRules';
+import {
+  fetchDiscoverableProfileCard,
+  getSocialRelationship,
+  requestOrFollow,
+  searchDiscoverableProfiles,
+} from './socialGraph';
 
 const PROFILE_PUBLIC_COLUMNS = 'user_id, display_name, username, bio, avatar_path, banner_path, is_public, updated_at';
 
@@ -51,15 +59,33 @@ async function withPublicSignedUrls(profile) {
 }
 
 export async function searchPublicProfiles({ query, offset = 0, limit = SOCIAL_SEARCH_PAGE_SIZE } = {}) {
-  const supabase = getSupabase();
-  if (!supabase) {
-    throw markCoded('config');
-  }
-  await requireUserId(supabase);
   const pattern = buildUsernameSearchPattern(query);
   if (!pattern) {
     return { items: [], offset: 0, hasMore: false };
   }
+
+  const supabase = getSupabase();
+  if (!supabase) {
+    throw markCoded('config');
+  }
+  const viewerId = await requireUserId(supabase);
+
+  try {
+    const result = await searchDiscoverableProfiles({ query, offset, limit });
+    const items = (result.items || []).filter((item) => item?.userId && item.userId !== viewerId);
+    return {
+      ...result,
+      items,
+      // Keep pagination cursor aligned with the requested page size, not filtered length.
+      hasMore: result.hasMore,
+    };
+  } catch (error) {
+    if (error?.code !== 'social_v2_unavailable') {
+      throw error;
+    }
+  }
+
+  // Social V1 fallback until the V2 migration is applied.
   const from = Math.max(0, Number(offset) || 0);
   const size = Math.min(50, Math.max(1, Number(limit) || SOCIAL_SEARCH_PAGE_SIZE));
   const to = from + size - 1;
@@ -68,6 +94,7 @@ export async function searchPublicProfiles({ query, offset = 0, limit = SOCIAL_S
     .select(PROFILE_PUBLIC_COLUMNS)
     .eq('is_public', true)
     .not('username', 'is', null)
+    .neq('user_id', viewerId)
     .ilike('username', pattern)
     .order('username', { ascending: true })
     .range(from, to);
@@ -82,7 +109,7 @@ export async function searchPublicProfiles({ query, offset = 0, limit = SOCIAL_S
     rows.map(async (row) => withPublicSignedUrls(normalizeDiscoveryProfile(row)))
   );
   return {
-    items,
+    items: items.filter((item) => item?.userId && item.userId !== viewerId),
     offset: from,
     hasMore: rows.length === size,
   };
@@ -110,24 +137,77 @@ export async function fetchPublicProfileByUsername(username) {
     }
     throw markCoded('profile_load_failed', error);
   }
-  if (!data) {
-    throw markCoded('profile_not_found');
+
+  if (data) {
+    const profile = await withPublicSignedUrls(normalizeDiscoveryProfile(data));
+    const isSelf = viewerId === profile.userId;
+    const [favorites, stats, followCounts, relationship] = await Promise.all([
+      fetchPublicFavorites(profile.userId),
+      fetchPublicStats(profile.userId),
+      fetchFollowCounts(profile.userId),
+      isSelf ? Promise.resolve(emptyRelationship()) : getRelationshipSafe(profile.userId),
+    ]);
+    return {
+      profile,
+      favorites,
+      stats,
+      followCounts,
+      isFollowing: relationship.isFollowing,
+      relationship,
+      relationshipAction: resolveRelationshipAction(relationship, { isSelf }),
+      isSelf,
+      limited: false,
+    };
   }
-  const profile = await withPublicSignedUrls(normalizeDiscoveryProfile(data));
-  const [favorites, stats, followCounts, isFollowing] = await Promise.all([
-    fetchPublicFavorites(profile.userId),
-    fetchPublicStats(profile.userId),
-    fetchFollowCounts(profile.userId),
-    fetchIsFollowing(profile.userId),
-  ]);
-  return {
-    profile,
-    favorites,
-    stats,
-    followCounts,
-    isFollowing,
-    isSelf: viewerId === profile.userId,
-  };
+
+  // Private-but-discoverable limited card (Social V2).
+  try {
+    const card = await fetchDiscoverableProfileCard(normalized);
+    const isSelf = viewerId === card.userId;
+    const relationship = isSelf ? emptyRelationship() : await getRelationshipSafe(card.userId);
+    const followCounts = await fetchFollowCountsSafe(card.userId);
+    return {
+      profile: {
+        ...card,
+        bio: '',
+        bannerPath: null,
+        bannerUrl: null,
+      },
+      favorites: emptyFavorites(),
+      stats: emptyPublicStats(),
+      followCounts,
+      isFollowing: relationship.isFollowing,
+      relationship,
+      relationshipAction: resolveRelationshipAction(relationship, { isSelf }),
+      isSelf,
+      limited: !card.isPublic,
+    };
+  } catch (discoverError) {
+    if (discoverError?.code === 'social_v2_unavailable') {
+      throw markCoded('profile_not_found');
+    }
+    throw discoverError;
+  }
+}
+
+async function getRelationshipSafe(userId) {
+  try {
+    return await getSocialRelationship(userId);
+  } catch (error) {
+    if (error?.code === 'social_v2_unavailable') {
+      const following = await fetchIsFollowing(userId);
+      return { ...emptyRelationship(), isFollowing: following, targetIsPublic: true, targetIsDiscoverable: true };
+    }
+    return emptyRelationship();
+  }
+}
+
+async function fetchFollowCountsSafe(userId) {
+  try {
+    return await fetchFollowCounts(userId);
+  } catch {
+    return emptyFollowCounts();
+  }
 }
 
 async function fetchPublicFavorites(userId) {
@@ -200,6 +280,17 @@ export async function followUser(targetUserId) {
   if (!targetUserId || viewerId === targetUserId) {
     throw markCoded('invalid_follow');
   }
+
+  try {
+    const result = await requestOrFollow(targetUserId);
+    return result;
+  } catch (error) {
+    if (error?.code !== 'social_v2_unavailable') {
+      throw error;
+    }
+  }
+
+  // Social V1 direct follow fallback (public targets only).
   const { error } = await supabase
     .from('profile_follows')
     .upsert(
@@ -215,11 +306,11 @@ export async function followUser(targetUserId) {
       throw markCoded('profile_not_public', error);
     }
     if (/duplicate|unique/i.test(message)) {
-      return true;
+      return { action: 'already_following', requestId: null, isFollowing: true };
     }
     throw markCoded('follow_failed', error);
   }
-  return true;
+  return { action: 'followed', requestId: null, isFollowing: true };
 }
 
 export async function unfollowUser(targetUserId) {

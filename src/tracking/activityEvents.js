@@ -4,7 +4,7 @@ const ACTIVITY_SHOW_ID = /^trakt-show-[0-9]+$/;
 const ACTIVITY_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const ACTIONS = new Set(['watched', 'unwatched']);
-const SOURCES = new Set(['individual', 'season_bulk', 'show_bulk', 'undo']);
+const SOURCES = new Set(['individual', 'season_bulk', 'show_bulk', 'undo', 'episode_catchup']);
 const MEDIA_TYPES = new Set(['movie', 'episode']);
 
 export function createClientEventId() {
@@ -141,7 +141,9 @@ export function acknowledgeActivityEvents(state, acks) {
 }
 
 export function isChartEligibleActivity(event) {
-  return event?.action === 'watched' && event?.source === 'individual';
+  // Catch-up episodes remain chart-eligible; they are excluded from social publishing only.
+  return event?.action === 'watched'
+    && (event?.source === 'individual' || event?.source === 'episode_catchup');
 }
 
 export function activityEventsFromRemoteRows(rows) {

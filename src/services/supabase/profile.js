@@ -14,9 +14,11 @@ import {
   normalizeProfileRow,
   normalizeUsername,
 } from './profileRules';
-import { canPublishProfile } from './socialRules';
+import { canEnableDiscovery, canPublishProfile } from './socialRules';
 
-const PROFILE_COLUMNS = 'user_id, display_name, username, bio, avatar_path, banner_path, is_public, updated_at';
+const PROFILE_COLUMNS = 'user_id, display_name, username, bio, avatar_path, banner_path, is_public, allow_profile_discovery, share_activity_with_followers, updated_at';
+const PROFILE_COLUMNS_LEGACY = 'user_id, display_name, username, bio, avatar_path, banner_path, is_public, updated_at';
+const PROFILE_COLUMNS_V2 = 'user_id, display_name, username, bio, avatar_path, banner_path, is_public, allow_profile_discovery, updated_at';
 
 function markCoded(code, cause) {
   const error = new Error(code);
@@ -106,6 +108,35 @@ export async function fetchOwnProfile() {
     .eq('user_id', userId)
     .maybeSingle();
   if (error) {
+    // Older databases without Social V3 sharing column still load Social V2 columns.
+    if (/share_activity_with_followers|42703/i.test(`${error.message || ''} ${error.code || ''}`)) {
+      const v2 = await supabase
+        .from('profiles')
+        .select(PROFILE_COLUMNS_V2)
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (!v2.error && v2.data) {
+        return withSignedUrls(normalizeProfileRow({
+          ...v2.data,
+          share_activity_with_followers: false,
+        }));
+      }
+    }
+    // Older databases without Social V2 discovery column still load Social V1 columns.
+    if (/allow_profile_discovery|42703/i.test(`${error.message || ''} ${error.code || ''}`)) {
+      const legacyV2 = await supabase
+        .from('profiles')
+        .select(PROFILE_COLUMNS_LEGACY)
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (!legacyV2.error && legacyV2.data) {
+        return withSignedUrls(normalizeProfileRow({
+          ...legacyV2.data,
+          allow_profile_discovery: false,
+          share_activity_with_followers: false,
+        }));
+      }
+    }
     // Older databases without is_public still load core columns.
     if (/is_public|42703/i.test(`${error.message || ''} ${error.code || ''}`)) {
       const legacy = await supabase
@@ -127,6 +158,20 @@ export async function fetchOwnProfile() {
       .select(PROFILE_COLUMNS)
       .single();
     if (createError) {
+      if (/allow_profile_discovery|42703/i.test(`${createError.message || ''} ${createError.code || ''}`)) {
+        const legacyCreate = await supabase
+          .from('profiles')
+          .upsert({ user_id: userId }, { onConflict: 'user_id' })
+          .select(PROFILE_COLUMNS_LEGACY)
+          .single();
+        if (legacyCreate.error) {
+          throw markCoded('profile_load_failed', legacyCreate.error);
+        }
+        return withSignedUrls(normalizeProfileRow({
+          ...legacyCreate.data,
+          allow_profile_discovery: false,
+        }));
+      }
       throw markCoded('profile_load_failed', createError);
     }
     return withSignedUrls(normalizeProfileRow(created));
@@ -171,8 +216,20 @@ export async function updateOwnProfile(input) {
   const isPublic = Object.prototype.hasOwnProperty.call(input, 'isPublic')
     ? Boolean(input.isPublic)
     : undefined;
+  const allowProfileDiscovery = Object.prototype.hasOwnProperty.call(input, 'allowProfileDiscovery')
+    ? Boolean(input.allowProfileDiscovery)
+    : undefined;
+  const shareActivityWithFollowers = Object.prototype.hasOwnProperty.call(input, 'shareActivityWithFollowers')
+    ? Boolean(input.shareActivityWithFollowers)
+    : undefined;
   if (isPublic != null && !canPublishProfile({ username, isPublic })) {
     throw markCoded('public_requires_username');
+  }
+  if (
+    allowProfileDiscovery != null
+    && !canEnableDiscovery({ username, allowProfileDiscovery })
+  ) {
+    throw markCoded('discovery_requires_username');
   }
 
   const patch = {
@@ -182,6 +239,16 @@ export async function updateOwnProfile(input) {
   };
   if (isPublic != null) {
     patch.is_public = isPublic;
+    // Public profiles are already searchable; discovery flag is for private opt-in.
+    if (isPublic) {
+      patch.allow_profile_discovery = false;
+    }
+  }
+  if (allowProfileDiscovery != null && isPublic !== true) {
+    patch.allow_profile_discovery = allowProfileDiscovery;
+  }
+  if (shareActivityWithFollowers != null) {
+    patch.share_activity_with_followers = shareActivityWithFollowers;
   }
   if (Object.prototype.hasOwnProperty.call(input, 'avatarPath')) {
     patch.avatar_path = input.avatarPath || null;
@@ -190,15 +257,47 @@ export async function updateOwnProfile(input) {
     patch.banner_path = input.bannerPath || null;
   }
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('profiles')
     .update(patch)
     .eq('user_id', userId)
     .select(PROFILE_COLUMNS)
     .single();
+  if (error && /share_activity_with_followers|42703/i.test(`${error.message || ''} ${error.code || ''}`)) {
+    const v2Patch = { ...patch };
+    delete v2Patch.share_activity_with_followers;
+    const v2 = await supabase
+      .from('profiles')
+      .update(v2Patch)
+      .eq('user_id', userId)
+      .select(PROFILE_COLUMNS_V2)
+      .single();
+    data = v2.data ? { ...v2.data, share_activity_with_followers: false } : null;
+    error = v2.error;
+  }
+  if (error && /allow_profile_discovery|42703/i.test(`${error.message || ''} ${error.code || ''}`)) {
+    const legacyPatch = { ...patch };
+    delete legacyPatch.allow_profile_discovery;
+    delete legacyPatch.share_activity_with_followers;
+    const legacy = await supabase
+      .from('profiles')
+      .update(legacyPatch)
+      .eq('user_id', userId)
+      .select(PROFILE_COLUMNS_LEGACY)
+      .single();
+    data = legacy.data
+      ? { ...legacy.data, allow_profile_discovery: false, share_activity_with_followers: false }
+      : null;
+    error = legacy.error;
+  }
   if (error) {
-    if (/profiles_public_requires_username/i.test(`${error.message || ''} ${error.details || ''}`)) {
-      throw markCoded('public_requires_username', error);
+    if (/profiles_public_requires_username|profiles_discovery_requires_username/i.test(`${error.message || ''} ${error.details || ''}`)) {
+      throw markCoded(
+        /discovery/i.test(`${error.message || ''} ${error.details || ''}`)
+          ? 'discovery_requires_username'
+          : 'public_requires_username',
+        error
+      );
     }
     throw mapProfileError(error);
   }

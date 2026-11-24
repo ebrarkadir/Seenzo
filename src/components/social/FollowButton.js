@@ -7,6 +7,7 @@ export default function FollowButton({
   isFollowing = false,
   loading = false,
   disabled = false,
+  compact = false,
   onPress,
 }) {
   const { t } = useTranslation();
@@ -22,6 +23,7 @@ export default function FollowButton({
       onPress={onPress}
       style={({ pressed }) => [
         styles.button,
+        compact && styles.compact,
         isFollowing ? styles.following : styles.follow,
         (disabled || loading) && styles.disabled,
         pressed && styles.pressed,
@@ -42,6 +44,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
+  },
+  compact: {
+    minHeight: 36,
+    paddingHorizontal: spacing.sm + 4,
   },
   follow: {
     backgroundColor: colors.primary,

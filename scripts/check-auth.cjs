@@ -71,7 +71,7 @@ expect('gitignore ignores local env files', fs.readFileSync(path.join(__dirname,
 const authContext = fs.readFileSync(path.join(__dirname, '..', 'src/auth/AuthContext.js'), 'utf8');
 expect(
   'signOut clears session even when supabase returns an error',
-  authContext.includes('await supabase.auth.signOut()')
+  authContext.includes("signOut({ scope: 'local' })")
     && authContext.includes('setSession(null)')
     && !/if \(!error\) \{\s*setSession\(null\);/s.test(authContext),
   true

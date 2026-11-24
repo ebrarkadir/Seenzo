@@ -10,20 +10,25 @@ import { loadMediaLibrary } from '../data/mediaLibrary';
 import { startupLog } from '../diagnostics/startup';
 import { colors, spacing, typography } from '../theme';
 import { AuthProvider, useAuth } from '../auth/AuthContext';
+import { resolveRootRedirect } from '../auth/sessionRouting';
+import { logoutLog } from '../diagnostics/logout';
 import { ProfileProvider } from '../profile/ProfileContext';
+import { ReviewsProvider } from '../reviews/ReviewsContext';
 import { TrackingProvider, useTracking } from '../tracking/TrackingContext';
 import PrimaryButton from '../components/ui/PrimaryButton';
 
-function isAuthFlowRoute(route) {
-  return route === 'welcome'
-    || route === 'sign-in'
-    || route === 'sign-up'
-    || route === 'auth';
-}
-
 function RootStack() {
   const { t } = useTranslation();
-  const { ready, onboardingComplete, loadError, cacheRestored, syncStatus, retryLoad, retrySync } = useTracking();
+  const {
+    ready,
+    onboardingComplete,
+    demoMode,
+    loadError,
+    cacheRestored,
+    syncStatus,
+    retryLoad,
+    retrySync,
+  } = useTracking();
   const { ready: authReady, session, signOut } = useAuth();
   const signedIn = Boolean(session?.user?.id);
   const [catalogReady, setCatalogReady] = useState(false);
@@ -55,39 +60,58 @@ function RootStack() {
       catalogReady,
       signedIn,
       onboardingComplete,
+      demoMode,
       route: segments[0] || 'none',
       loadError,
       cacheRestored,
     });
-  }, [authReady, cacheRestored, catalogReady, loadError, onboardingComplete, ready, segments, signedIn]);
+  }, [
+    authReady,
+    cacheRestored,
+    catalogReady,
+    demoMode,
+    loadError,
+    onboardingComplete,
+    ready,
+    segments,
+    signedIn,
+  ]);
 
   useEffect(() => {
     if (!authReady || !ready || (loadError && !cacheRestored)) {
       return;
     }
-    const route = segments[0];
-    if (onboardingComplete) {
-      if (route === 'welcome' || route === 'onboarding') {
-        startupLog('redirect', { to: 'tabs', reason: 'onboarding_complete' });
-        router.replace('/(tabs)');
-      }
-      return;
+    const route = segments[0] || null;
+    const decision = resolveRootRedirect({
+      signedIn,
+      onboardingComplete,
+      demoMode,
+      route,
+    });
+    logoutLog('root_redirect_decision', {
+      signedIn,
+      onboardingComplete,
+      demoMode,
+      route: route || 'none',
+      action: decision.action,
+      to: decision.to || 'none',
+      reason: decision.reason,
+    });
+    if (decision.action === 'replace' && decision.to) {
+      startupLog('redirect', { to: decision.to, reason: decision.reason });
+      router.replace(decision.to);
     }
-    if (signedIn) {
-      // Keep auth/callback reachable while the session is established.
-      if (route !== 'onboarding' && route !== 'auth') {
-        startupLog('redirect', { to: 'onboarding', reason: 'signed_in_incomplete' });
-        router.replace('/onboarding');
-      }
-      return;
-    }
-    // Signed-out incomplete users stay on index (gateway) or explicit auth routes.
-    // Prefer index over /welcome so a blank Redirect screen cannot cover the UI.
-    if (route && route !== 'index' && !isAuthFlowRoute(route)) {
-      startupLog('redirect', { to: 'index', reason: 'signed_out' });
-      router.replace('/');
-    }
-  }, [authReady, cacheRestored, loadError, onboardingComplete, ready, router, segments, signedIn]);
+  }, [
+    authReady,
+    cacheRestored,
+    demoMode,
+    loadError,
+    onboardingComplete,
+    ready,
+    router,
+    segments,
+    signedIn,
+  ]);
 
   if (!authReady || !ready || !catalogReady) {
     return (
@@ -145,6 +169,8 @@ function RootStack() {
       <Stack.Screen name="auth/callback" options={{ title: t('auth.callbackTitle'), headerBackVisible: false }} />
       <Stack.Screen name="edit-profile" options={{ title: t('profile.editProfile') }} />
       <Stack.Screen name="users/search" options={{ title: t('social.searchTitle') }} />
+      <Stack.Screen name="users/connections" options={{ title: t('social.connectionsTitle') }} />
+      <Stack.Screen name="social/notifications" options={{ title: t('social.notificationsTitle') }} />
       <Stack.Screen name="user/[username]" options={{ title: t('social.profileTitle') }} />
       <Stack.Screen name="personal-ratings" options={{ title: t('personalRatings.title') }} />
       <Stack.Screen name="insights" options={{ title: t('insights.title') }} />
@@ -200,8 +226,10 @@ export default function RootLayout() {
       <AuthProvider>
         <TrackingProvider>
           <ProfileProvider>
-            <StatusBar style="light" />
-            <RootStack />
+            <ReviewsProvider>
+              <StatusBar style="light" />
+              <RootStack />
+            </ReviewsProvider>
           </ProfileProvider>
         </TrackingProvider>
       </AuthProvider>

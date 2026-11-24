@@ -356,6 +356,13 @@ export default function PersonalRatingsScreen() {
         visible={Boolean(ratingTarget)}
         title={sheetTitle}
         mediaTitle={ratingTarget?.title}
+        mediaType={ratingTarget?.kind || null}
+        mediaId={ratingTarget?.id || null}
+        showMediaId={ratingTarget?.kind === 'episode' ? ratingTarget?.showId : null}
+        seasonNumber={ratingTarget?.kind === 'episode' ? ratingTarget?.season ?? null : null}
+        episodeNumber={ratingTarget?.kind === 'episode' ? ratingTarget?.number ?? null : null}
+        posterPath={ratingTarget?.posterPath || null}
+        posterUri={ratingTarget?.poster || null}
         value={draft}
         savedValue={ratingTarget?.rating ?? null}
         saving={busy}

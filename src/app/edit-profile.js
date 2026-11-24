@@ -26,7 +26,7 @@ import {
   normalizeDisplayName,
   normalizeUsername,
 } from '../services/supabase/profileRules';
-import { canPublishProfile } from '../services/supabase/socialRules';
+import { canEnableDiscovery, canPublishProfile } from '../services/supabase/socialRules';
 import { pickProfileImage } from '../services/supabase/profileMedia';
 import { colors, radii, spacing, typography } from '../theme';
 
@@ -62,6 +62,12 @@ function EditProfileForm() {
   const [username, setUsername] = useState(profile.username || '');
   const [bio, setBio] = useState(profile.bio || '');
   const [isPublic, setIsPublic] = useState(Boolean(profile.isPublic));
+  const [allowProfileDiscovery, setAllowProfileDiscovery] = useState(
+    Boolean(profile.allowProfileDiscovery)
+  );
+  const [shareActivityWithFollowers, setShareActivityWithFollowers] = useState(
+    Boolean(profile.shareActivityWithFollowers)
+  );
   const [dirty, setDirty] = useState(false);
   const [localError, setLocalError] = useState(null);
   const [statusMessage, setStatusMessage] = useState(null);
@@ -76,6 +82,8 @@ function EditProfileForm() {
     setUsername(profile.username || '');
     setBio(profile.bio || '');
     setIsPublic(Boolean(profile.isPublic));
+    setAllowProfileDiscovery(Boolean(profile.allowProfileDiscovery));
+    setShareActivityWithFollowers(Boolean(profile.shareActivityWithFollowers));
     setLocalError(null);
     setStatusMessage(null);
   }
@@ -85,7 +93,9 @@ function EditProfileForm() {
     username: normalizeUsername(username),
     bio: normalizeBio(bio),
     isPublic: Boolean(isPublic),
-  }), [bio, displayName, isPublic, username]);
+    allowProfileDiscovery: Boolean(!isPublic && allowProfileDiscovery),
+    shareActivityWithFollowers: Boolean(shareActivityWithFollowers),
+  }), [allowProfileDiscovery, bio, displayName, isPublic, shareActivityWithFollowers, username]);
 
   const headerProfile = useMemo(() => ({
     ...profile,
@@ -132,6 +142,13 @@ function EditProfileForm() {
     }
     if (!canPublishProfile({ username: draftFields.username, isPublic: draftFields.isPublic })) {
       setLocalError('public_requires_username');
+      return;
+    }
+    if (!canEnableDiscovery({
+      username: draftFields.username,
+      allowProfileDiscovery: draftFields.allowProfileDiscovery,
+    })) {
+      setLocalError('discovery_requires_username');
       return;
     }
     setLocalError(null);
@@ -298,6 +315,60 @@ function EditProfileForm() {
             <Text style={styles.meta}>
               {t(isPublic ? 'profile.visibilityPublicHint' : 'profile.visibilityPrivateHint')}
             </Text>
+          </View>
+          {!isPublic ? (
+            <View style={styles.field}>
+              <Text style={styles.label}>{t('profile.discovery')}</Text>
+              <View style={styles.visibilityRow}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: !allowProfileDiscovery }}
+                  onPress={() => markDirty(setAllowProfileDiscovery)(false)}
+                  style={[styles.visibilityChip, !allowProfileDiscovery && styles.visibilityChipActive]}
+                >
+                  <Text style={[styles.visibilityText, !allowProfileDiscovery && styles.visibilityTextActive]}>
+                    {t('profile.discoveryOff')}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: allowProfileDiscovery }}
+                  onPress={() => markDirty(setAllowProfileDiscovery)(true)}
+                  style={[styles.visibilityChip, allowProfileDiscovery && styles.visibilityChipActive]}
+                >
+                  <Text style={[styles.visibilityText, allowProfileDiscovery && styles.visibilityTextActive]}>
+                    {t('profile.discoveryOn')}
+                  </Text>
+                </Pressable>
+              </View>
+              <Text style={styles.meta}>{t('profile.discoveryHint')}</Text>
+            </View>
+          ) : null}
+          <View style={styles.field}>
+            <Text style={styles.label}>{t('profile.shareActivity')}</Text>
+            <View style={styles.visibilityRow}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ selected: !shareActivityWithFollowers }}
+                onPress={() => markDirty(setShareActivityWithFollowers)(false)}
+                style={[styles.visibilityChip, !shareActivityWithFollowers && styles.visibilityChipActive]}
+              >
+                <Text style={[styles.visibilityText, !shareActivityWithFollowers && styles.visibilityTextActive]}>
+                  {t('profile.shareActivityOff')}
+                </Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ selected: shareActivityWithFollowers }}
+                onPress={() => markDirty(setShareActivityWithFollowers)(true)}
+                style={[styles.visibilityChip, shareActivityWithFollowers && styles.visibilityChipActive]}
+              >
+                <Text style={[styles.visibilityText, shareActivityWithFollowers && styles.visibilityTextActive]}>
+                  {t('profile.shareActivityOn')}
+                </Text>
+              </Pressable>
+            </View>
+            <Text style={styles.meta}>{t('profile.shareActivityHint')}</Text>
           </View>
           <Text style={styles.meta}>{t('profile.emailReadOnly', { email })}</Text>
           {uploadProgress != null || pendingKind ? (

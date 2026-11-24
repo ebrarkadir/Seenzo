@@ -170,7 +170,7 @@ export default function TvShowsScreen() {
       <UndoBar />
       <EpisodeDetailSheet
         key={selected ? `${selected.showId}-${selected.episodeId}` : 'closed'}
-        visible={Boolean(selectedEpisode)}
+        visible={Boolean(selectedEpisode) && !ratingTarget}
         show={selectedShow}
         episode={selectedEpisode}
         watched={selectedWatched}
@@ -190,9 +190,12 @@ export default function TvShowsScreen() {
             return;
           }
           setDraft(episodeRatings?.[selectedEpisode.id] ?? null);
+          // Hide episode Modal before opening RatingSheet (Android nested-Modal tap bug).
           setRatingTarget({
             id: selectedEpisode.id,
             title: `${t('common.episodeCode', episodeCode(selectedEpisode))} · ${episodeTitle(t, selectedEpisode)}`,
+            season: selectedEpisode.season,
+            number: selectedEpisode.number,
           });
         }}
       />
@@ -200,6 +203,13 @@ export default function TvShowsScreen() {
         visible={Boolean(ratingTarget)}
         title={t('rating.episode')}
         mediaTitle={ratingTarget?.title}
+        mediaType="episode"
+        mediaId={ratingTarget?.id}
+        showMediaId={selectedShow?.id || null}
+        seasonNumber={ratingTarget?.season ?? selectedEpisode?.season ?? null}
+        episodeNumber={ratingTarget?.number ?? selectedEpisode?.number ?? null}
+        posterPath={selectedShow?.posterPath || null}
+        posterUri={selectedShow?.poster || null}
         value={draft}
         savedValue={ratingTarget ? episodeRatings?.[ratingTarget.id] ?? null : null}
         onChange={setDraft}

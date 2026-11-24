@@ -57,6 +57,8 @@ expect('exact half clip rendering', sheet.includes('starHalfClip'));
 expect('has close icon not footer close text', sheet.includes('name="close"') && !sheet.includes('styles.closeText'));
 expect('save disabled when unrated', sheet.includes('value == null'));
 expect('remove only when saved exists', sheet.includes('savedValue != null'));
+expect('optional review field present', sheet.includes('rating.review.placeholder'));
+expect('spoiler toggle wired', sheet.includes('SpoilerToggle'));
 expect('no calculator grid cells', !sheet.includes('styles.cell') && !sheet.includes('gridRow'));
 
 const usages = [
@@ -68,6 +70,22 @@ const usages = [
 ].map((relative) => fs.readFileSync(path.join(__dirname, '..', relative), 'utf8'));
 
 expect('all entry points still use RatingSheet', usages.every((source) => source.includes('<RatingSheet')));
+
+const movieSheet = usages[4];
+const showSource = usages[1];
+const tvHome = usages[2];
+expect(
+  'movie sheet hides parent modal while rating',
+  movieSheet.includes('movieSheetVisible') && movieSheet.includes('!ratingOpen')
+);
+expect(
+  'show detail hides episode sheet while rating episode',
+  showSource.includes("ratingTarget?.type !== 'episode'")
+);
+expect(
+  'tv home hides episode sheet while rating',
+  tvHome.includes('Boolean(selectedEpisode) && !ratingTarget')
+);
 
 const failed = checks.filter((check) => !check.pass);
 if (failed.length) {

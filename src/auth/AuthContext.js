@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 
 import { getAuthEmailRedirectTo } from './authRedirect';
 import { normalizeAuthEmail, validateEmail } from './messages';
+import { logoutLog } from '../diagnostics/logout';
 import { startupLog } from '../diagnostics/startup';
 import { getSupabaseConfig } from '../services/supabase/config';
 import { getSupabase } from '../services/supabase/client';
@@ -58,9 +59,14 @@ export function AuthProvider({ children }) {
         startupLog('auth_ready', { session: false, recovered: true });
       }
     });
-    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      // Ignore remote events that would re-auth after an intentional local logout
+      // until storage has been cleared; local signOut still emits SIGNED_OUT.
       setSession(nextSession ?? null);
       setReady(true);
+      if (event === 'SIGNED_OUT') {
+        logoutLog('auth_state_updated', { signedIn: false, event });
+      }
     });
     return () => {
       active = false;
@@ -130,16 +136,43 @@ export function AuthProvider({ children }) {
   }, []);
 
   const signOut = useCallback(async () => {
+    logoutLog('signout_started');
     const supabase = getSupabase();
+    // Clear React auth state immediately so routing cannot wait on storage/network.
+    setSession(null);
+    logoutLog('auth_state_updated', { signedIn: false, phase: 'optimistic' });
+
     if (!supabase) {
-      setSession(null);
+      logoutLog('local_session_cleared', { mode: 'no_client' });
       return { error: null };
     }
-    const { error } = await supabase.auth.signOut();
-    // Always clear local session so a failed network sign-out cannot leave
-    // the UI stuck in an authenticated state.
+
+    const LOCAL_TIMEOUT_MS = 4000;
+    let error = null;
+    let timedOut = false;
+    try {
+      const result = await Promise.race([
+        supabase.auth.signOut({ scope: 'local' }),
+        new Promise((resolve) => {
+          setTimeout(() => resolve({ error: { message: 'sign_out_timeout' } }), LOCAL_TIMEOUT_MS);
+        }),
+      ]);
+      error = result?.error || null;
+      timedOut = error?.message === 'sign_out_timeout';
+    } catch (requestError) {
+      error = requestError;
+    }
+
+    // Ensure session stays cleared even if a late auth event raced in.
     setSession(null);
-    return { error };
+    logoutLog('local_session_cleared', {
+      timedOut,
+      hasError: Boolean(error && !timedOut),
+    });
+
+    // Best-effort remote revoke only — never blocks navigation.
+    Promise.resolve(supabase.auth.signOut({ scope: 'global' })).catch(() => {});
+    return { error: timedOut ? null : error };
   }, []);
 
   const value = useMemo(() => ({

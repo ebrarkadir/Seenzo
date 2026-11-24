@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { colors, radii, spacing, typography } from '../../theme';
 
-export default function SearchField({ value, onChangeText, placeholder }) {
+export default function SearchField({ value, onChangeText, placeholder, autoFocus = false }) {
   const { t } = useTranslation();
 
   return (
@@ -18,6 +18,7 @@ export default function SearchField({ value, onChangeText, placeholder }) {
         style={styles.input}
         autoCorrect={false}
         autoCapitalize="none"
+        autoFocus={autoFocus}
         returnKeyType="search"
       />
       {value ? (

@@ -104,6 +104,7 @@ expect('counts via security definer rpc', socialClient.includes("rpc('get_public
 expect('no service role in social client', !/service_role|SERVICE_ROLE/i.test(socialClient));
 
 const searchScreen = fs.readFileSync(path.join(__dirname, '..', 'src/app/users/search.js'), 'utf8');
+const peoplePanel = fs.readFileSync(path.join(__dirname, '..', 'src/components/social/PeopleDiscoveryPanel.js'), 'utf8');
 const publicScreen = fs.readFileSync(path.join(__dirname, '..', 'src/app/user/[username].js'), 'utf8');
 const publicView = fs.readFileSync(path.join(__dirname, '..', 'src/components/social/PublicProfileView.js'), 'utf8');
 const editScreen = fs.readFileSync(path.join(__dirname, '..', 'src/app/edit-profile.js'), 'utf8');
@@ -111,19 +112,32 @@ const profileTab = fs.readFileSync(path.join(__dirname, '..', 'src/app/(tabs)/pr
 const layout = fs.readFileSync(path.join(__dirname, '..', 'src/app/_layout.js'), 'utf8');
 const en = fs.readFileSync(path.join(__dirname, '..', 'src/i18n/locales/en.json'), 'utf8');
 
-expect('search screen debounces', searchScreen.includes('SOCIAL_SEARCH_DEBOUNCE_MS'));
-expect('search screen paginates', searchScreen.includes('onEndReached') && searchScreen.includes('loadMore'));
-expect('search never renders email', !searchScreen.toLowerCase().includes('email'));
-expect('public profile uses follow button', publicView.includes('<FollowButton') && publicScreen.includes('followUser'));
+expect('search deep link hosts people panel', searchScreen.includes('PeopleDiscoveryPanel'));
+expect('people panel debounces', peoplePanel.includes('SOCIAL_SEARCH_DEBOUNCE_MS'));
+expect('people panel paginates', peoplePanel.includes('onEndReached') && peoplePanel.includes('loadMore'));
+expect('people panel never renders email', !peoplePanel.toLowerCase().includes('email'));
+expect('search route never renders email', !searchScreen.toLowerCase().includes('email'));
+expect('public profile uses relationship button', publicView.includes('<RelationshipButton') && publicScreen.includes('followUser'));
 expect('public favorites are read only', publicView.includes('readOnly'));
 expect('public header is read only', publicView.includes('ProfileHeader profile={profile} readOnly'));
 expect('edit profile has visibility controls', editScreen.includes('visibilityPrivate') && editScreen.includes('isPublic'));
 expect('edit profile validates public username', editScreen.includes('canPublishProfile'));
-expect('profile tab has Find People row', profileTab.includes('<FindPeopleRow') && profileTab.includes("/users/search"));
+expect(
+  'profile tab has Find People row to Social People',
+  profileTab.includes('<FindPeopleRow')
+    && profileTab.includes('/(tabs)/social')
+    && profileTab.includes("section: 'people'")
+);
 expect('find people sits near activity', profileTab.indexOf('ProfileActivitySection') < profileTab.indexOf('FindPeopleRow'));
 expect('account settings no longer hosts find people button', !/PrimaryButton[\s\S]*social\.findPeople/.test(profileTab));
-expect('layout registers social routes', layout.includes('users/search') && layout.includes('user/[username]'));
+expect(
+  'layout registers social routes',
+  layout.includes('users/search')
+    && layout.includes('user/[username]')
+    && layout.includes('social/notifications')
+);
 expect('i18n social keys present', en.includes('"social"') && en.includes('"findPeopleSubtitle"') && en.includes('"visibilityPublic"'));
+expect('i18n social home keys', en.includes('"homeTitle"') && en.includes('"feedEmptyTitle"') && en.includes('"sectionPeople"'));
 
 const findPeopleRow = fs.readFileSync(path.join(__dirname, '..', 'src/components/social/FindPeopleRow.js'), 'utf8');
 expect('find people row uses people icon', findPeopleRow.includes('people-outline') && findPeopleRow.includes('chevron-forward'));

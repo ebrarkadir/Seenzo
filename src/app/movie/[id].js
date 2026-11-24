@@ -227,6 +227,10 @@ export default function MovieDetailScreen() {
         visible={ratingOpen && watched}
         title={t('rating.movie')}
         mediaTitle={movie?.title}
+        mediaType="movie"
+        mediaId={movie?.id}
+        posterPath={movie?.posterPath || null}
+        posterUri={movie?.poster || null}
         value={draft}
         savedValue={movieRating}
         onChange={setDraft}

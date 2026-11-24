@@ -8,6 +8,7 @@ import { rememberMovie, rememberShow, resolveMovie as getMovie, resolveShow as g
 import { startupLog } from '../diagnostics/startup';
 import { parseTraktMovieKey, parseTraktShowKey } from '../services/trakt/normalize';
 import { hydrateMovie, hydrateShow } from '../services/trakt/catalog';
+import { publishSocialRatingEvent } from '../services/supabase/socialActivity';
 import { pullTracking, pushActivityEvents, pushTracking, trackingClient } from '../services/supabase/trackingSync';
 import {
   emptyGuestState,
@@ -54,6 +55,8 @@ import {
   applyShowIntent,
   applyShowRating,
   applyShowWatchlistToggle,
+  clampRating,
+  isEpisodeWatched,
   removeTrackedShow,
   showEntry,
 } from './watchlist';
@@ -158,6 +161,9 @@ export function TrackingProvider({ children }) {
   const guestFreshRef = useRef(false);
 
   if (scopeKey !== appliedKey) {
+    // Reset to empty non-demo state immediately on account→guest so a stale
+    // onboardingComplete flag cannot keep the signed-out user on tabs while
+    // guest storage loads. guestFresh is marked in the userId effect below.
     setAppliedKey(scopeKey);
     setReady(false);
     setState(emptyState());
@@ -193,6 +199,14 @@ export function TrackingProvider({ children }) {
     if (previousUserRef.current && !userId) {
       guestFreshRef.current = true;
       markGuestFresh(AsyncStorage).catch(() => {});
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        console.log('[logout] tracking_scope_updated', {
+          scope: 'guest',
+          guestFresh: true,
+          demoMode: false,
+          onboardingComplete: false,
+        });
+      }
     }
     previousUserRef.current = userId;
   }, [authReady, userId]);
@@ -244,6 +258,7 @@ export function TrackingProvider({ children }) {
               ackedQueue.episodes[id] = queue.episodes[id];
             }
           });
+          const previousServer = serverRef.current;
           serverRef.current = applyQueue(serverRef.current, ackedQueue);
           const stamps = {
             media: { ...stampsRef.current.media, ...result.stamps.media },
@@ -258,6 +273,62 @@ export function TrackingProvider({ children }) {
           stampsRef.current = stamps;
           conflicts = result.conflicts || [];
           blocked = queue.blocked || [];
+
+          // Backup social rating publish after cloud rating writes.
+          // Covers first INSERT sync (UPDATE trigger does not fire) and RPC timing misses.
+          if (!current.demoMode) {
+            Object.entries(ackedQueue.media).forEach(([id, op]) => {
+              if (op.type === 'delete') {
+                return;
+              }
+              const row = op.row;
+              if (!row) {
+                return;
+              }
+              const previousRating = row.media_type === 'movie'
+                ? previousServer?.movies?.[id]?.rating ?? null
+                : (previousServer?.shows?.[id]?.rating ?? previousServer?.showRatings?.[id] ?? null);
+              const nextRating = row.rating ?? null;
+              if (previousRating === nextRating) {
+                return;
+              }
+              if (row.media_type === 'movie') {
+                void publishSocialRatingEvent({
+                  activityType: 'movie_rated',
+                  mediaId: id,
+                  rating: nextRating,
+                });
+              } else if (row.media_type === 'show') {
+                void publishSocialRatingEvent({
+                  activityType: 'show_rated',
+                  mediaId: id,
+                  rating: nextRating,
+                });
+              }
+            });
+            Object.entries(ackedQueue.episodes).forEach(([id, op]) => {
+              if (op.type === 'delete') {
+                return;
+              }
+              const row = op.row;
+              if (!row?.show_media_id) {
+                return;
+              }
+              const previousRating = previousServer?.episodeRatings?.[id] ?? null;
+              const nextRating = row.rating ?? null;
+              if (previousRating === nextRating) {
+                return;
+              }
+              void publishSocialRatingEvent({
+                activityType: 'episode_rated',
+                mediaId: id,
+                showMediaId: row.show_media_id,
+                seasonNumber: row.season_number,
+                episodeNumber: row.episode_number,
+                rating: nextRating,
+              });
+            });
+          }
         }
         if (pendingActivity.length) {
           const activityResult = await pushActivityEvents(supabase, userId, current);
@@ -536,12 +607,23 @@ export function TrackingProvider({ children }) {
         marked = { ...result, created: !existing, previousIntent: existing?.intent || null };
       }
       const now = new Date().toISOString();
+      // Only the tapped episode stays `individual` (may publish to social feed).
+      // Prior catch-up episodes use episode_catchup so social feed is not flooded.
+      const primaryAdded = result.added.filter((id) => id === episodeId);
+      const catchupAdded = result.added.filter((id) => id !== episodeId);
       const events = [
         ...buildEpisodeActivityEvents({
           showId,
-          episodeIds: result.added,
+          episodeIds: primaryAdded,
           action: 'watched',
           source: 'individual',
+          now,
+        }),
+        ...buildEpisodeActivityEvents({
+          showId,
+          episodeIds: catchupAdded,
+          action: 'watched',
+          source: 'episode_catchup',
           now,
         }),
         ...buildEpisodeActivityEvents({
@@ -707,14 +789,42 @@ export function TrackingProvider({ children }) {
     if (!getShow(showId)) {
       return;
     }
+    const nextRating = clampRating(rating);
     commit((prev) => applyShowRating(prev, showId, rating));
+    if (!stateRef.current?.demoMode) {
+      void publishSocialRatingEvent({
+        activityType: 'show_rated',
+        mediaId: showId,
+        rating: nextRating,
+      });
+    }
   }, [commit]);
 
   const setEpisodeRating = useCallback((episodeId, rating) => {
     if (!episodeId) {
       return;
     }
+    const before = stateRef.current;
+    if (!isEpisodeWatched(before, episodeId)) {
+      return;
+    }
+    const lookedUp = episodeLookup(before, episodeId);
+    const kept = before?.keptEpisodes?.[episodeId] || null;
+    const showMediaId = lookedUp?.showId || kept?.showId || null;
+    const seasonNumber = lookedUp?.season ?? kept?.season ?? null;
+    const episodeNumber = lookedUp?.number ?? kept?.number ?? null;
+    const nextRating = clampRating(rating);
     commit((prev) => applyEpisodeRating(prev, episodeId, rating));
+    if (!stateRef.current?.demoMode && showMediaId) {
+      void publishSocialRatingEvent({
+        activityType: 'episode_rated',
+        mediaId: episodeId,
+        showMediaId,
+        seasonNumber,
+        episodeNumber,
+        rating: nextRating,
+      });
+    }
   }, [commit]);
 
   const saveMovie = useCallback((movieId, changes) => {
@@ -751,7 +861,18 @@ export function TrackingProvider({ children }) {
     if (!getMovie(movieId)) {
       return;
     }
+    if (!stateRef.current?.movies?.[movieId]?.watched) {
+      return;
+    }
+    const nextRating = clampRating(rating);
     commit((prev) => applyMovieRating(prev, movieId, rating));
+    if (!stateRef.current?.demoMode) {
+      void publishSocialRatingEvent({
+        activityType: 'movie_rated',
+        mediaId: movieId,
+        rating: nextRating,
+      });
+    }
   }, [commit]);
 
   const completeOnboarding = useCallback(({ shows: selectedShows = [], movies: selectedMovies = [] }) => {
