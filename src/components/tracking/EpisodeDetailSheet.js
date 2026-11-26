@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,11 +13,12 @@ import {
 } from '../../services/trakt/episodes';
 import { normalizeEpisodeOverview, parseTraktShowKey } from '../../services/trakt/normalize';
 import { colors, radii, spacing, typography } from '../../theme';
-import { episodeCode, isReleased } from '../../tracking/status';
+import { getReleasedSuccessor, isReleased } from '../../tracking/status';
 import EpisodeActorsBlock from '../people/EpisodeActorsBlock';
 import PosterThumb from '../ui/PosterThumb';
 import PrimaryButton from '../ui/PrimaryButton';
 import RateChip from '../ui/RateChip';
+import EpisodeIdentifier from './EpisodeIdentifier';
 
 export default function EpisodeDetailSheet({
   visible,
@@ -28,6 +29,7 @@ export default function EpisodeDetailSheet({
   onClose,
   onToggleWatched,
   onRate,
+  onNextEpisode,
 }) {
   if (!episode) {
     return null;
@@ -44,6 +46,7 @@ export default function EpisodeDetailSheet({
       onClose={onClose}
       onToggleWatched={onToggleWatched}
       onRate={onRate}
+      onNextEpisode={onNextEpisode}
     />
   );
 }
@@ -57,6 +60,7 @@ function EpisodeDetailSheetBody({
   onClose,
   onToggleWatched,
   onRate,
+  onNextEpisode,
 }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
@@ -71,6 +75,17 @@ function EpisodeDetailSheetBody({
   const canFetch = Boolean(traktShowId && seasonNumber != null && episodeNumber != null);
   const [overview, setOverview] = useState(seedOverview);
   const [loadingOverview, setLoadingOverview] = useState(!seedOverview && canFetch && visible);
+  const [actionBusy, setActionBusy] = useState(false);
+  const actionLockRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      actionLockRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!visible || seedOverview || !canFetch) {
@@ -102,7 +117,6 @@ function EpisodeDetailSheetBody({
   }, [canFetch, episodeNumber, seasonNumber, seedOverview, show?.id, traktShowId, visible]);
 
   const released = isReleased(episode);
-  const code = t('common.episodeCode', episodeCode(episode));
   const title = episodeTitle(t, episode) || t('trakt.unavailable');
   const posterPath = episode.posterPath || show?.posterPath;
   const posterUri = episode.poster || show?.poster;
@@ -112,6 +126,29 @@ function EpisodeDetailSheetBody({
   const synopsisText = loadingOverview
     ? t('trakt.loading')
     : synopsis || t('tv.noEpisodeOverview');
+  const nextEpisode = watched && show && episode?.id
+    ? getReleasedSuccessor(show, episode.id)
+    : null;
+  const showNextEpisode = Boolean(nextEpisode && onNextEpisode);
+
+  const runLocked = (action) => {
+    if (!action || actionLockRef.current) {
+      return;
+    }
+    actionLockRef.current = true;
+    setActionBusy(true);
+    try {
+      action();
+    } finally {
+      // Keep the lock briefly so rapid taps cannot double-fire sync handlers.
+      setTimeout(() => {
+        actionLockRef.current = false;
+        if (mountedRef.current) {
+          setActionBusy(false);
+        }
+      }, 250);
+    }
+  };
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -139,9 +176,9 @@ function EpisodeDetailSheetBody({
             <View style={styles.header}>
               <PosterThumb uri={posterUri} posterPath={posterPath} width={84} height={126} />
               <View style={styles.headerCopy}>
-                <Text style={styles.code}>{code}</Text>
-                <Text style={styles.title}>{title}</Text>
-                <Text style={styles.meta}>
+                <EpisodeIdentifier episode={episode} size="pill" />
+                <Text style={styles.title} numberOfLines={3}>{title}</Text>
+                <Text style={styles.meta} numberOfLines={2}>
                   {[
                     episode.airDate ? t('tv.airedOn', { date: formatAirDate(episode.airDate) }) : null,
                     typeof episode.runtime === 'number' ? t('common.minutes', { count: episode.runtime }) : null,
@@ -151,8 +188,8 @@ function EpisodeDetailSheetBody({
                   <RateChip
                     label={rateLabel}
                     accessibilityLabel={t('rating.episode')}
-                    disabled={!canRate}
-                    onPress={canRate ? onRate : () => {}}
+                    disabled={!canRate || actionBusy}
+                    onPress={canRate ? () => runLocked(onRate) : () => {}}
                   />
                   {rating == null ? (
                     <Text style={styles.meta}>{t('rating.none')}</Text>
@@ -166,10 +203,22 @@ function EpisodeDetailSheetBody({
             <Text style={styles.section}>{t('trakt.overview')}</Text>
             <Text style={styles.body}>{synopsisText}</Text>
             {released ? (
-              <PrimaryButton
-                label={t(watched ? 'tv.markUnwatched' : 'tv.markWatched')}
-                onPress={onToggleWatched}
-              />
+              <View style={styles.actions}>
+                <PrimaryButton
+                  label={t(watched ? 'tv.markUnwatched' : 'tv.markWatched')}
+                  disabled={actionBusy}
+                  onPress={() => runLocked(onToggleWatched)}
+                />
+                {showNextEpisode ? (
+                  <PrimaryButton
+                    variant="secondary"
+                    label={t('tv.nextEpisodeCta')}
+                    accessibilityLabel={t('tv.nextEpisodeA11y')}
+                    disabled={actionBusy}
+                    onPress={() => runLocked(onNextEpisode)}
+                  />
+                ) : null}
+              </View>
             ) : (
               <Text style={styles.meta}>
                 {episode.airDate
@@ -239,23 +288,27 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.md,
+    gap: 6,
+  },
+  actions: {
     gap: spacing.sm,
   },
   header: {
     flexDirection: 'row',
-    gap: spacing.md,
+    alignItems: 'flex-start',
+    gap: spacing.sm + 4,
   },
   headerCopy: {
     flex: 1,
     minWidth: 0,
-    gap: 6,
-  },
-  code: {
-    ...typography.label,
-    color: colors.primary,
+    gap: 4,
+    paddingTop: 2,
   },
   title: {
     ...typography.subtitle,
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '700',
     color: colors.text,
   },
   rateRow: {
@@ -263,11 +316,12 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     alignItems: 'center',
     gap: spacing.sm,
+    marginTop: 2,
   },
   section: {
     ...typography.label,
     color: colors.textSecondary,
-    marginTop: spacing.sm,
+    marginTop: 4,
   },
   body: {
     ...typography.body,

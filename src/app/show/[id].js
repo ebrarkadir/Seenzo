@@ -12,6 +12,7 @@ import RatingSheet from '../../components/ui/RatingSheet';
 import StatusBadge from '../../components/ui/StatusBadge';
 import UndoBar from '../../components/tracking/UndoBar';
 import EpisodeDetailSheet from '../../components/tracking/EpisodeDetailSheet';
+import EpisodeIdentifier from '../../components/tracking/EpisodeIdentifier';
 import ShowOverflowMenu from '../../components/tracking/ShowOverflowMenu';
 import CastCrewSection from '../../components/people/CastCrewSection';
 import { useAuth } from '../../auth/AuthContext';
@@ -25,6 +26,7 @@ import {
   deriveShowStatus,
   episodeCode,
   getProgress,
+  getReleasedSuccessor,
   getSeasonProgress,
   isReleased,
   listEpisodes,
@@ -339,8 +341,9 @@ export default function ShowDetailScreen() {
                   {(episodesBySeason[seasonNumber] || []).map((episode) => {
                     const released = isReleased(episode);
                     const isWatched = released && watched.has(episode.id);
-                    const code = t('common.episodeCode', episodeCode(episode));
+                    const code = t('common.episodeId', episodeCode(episode));
                     const episodeRating = episodeRatings?.[episode.id] ?? null;
+                    const title = episodeTitle(t, episode) || t('trakt.unavailable');
                     const openEpisode = () => setSelectedEpisodeId(episode.id);
                     const onCheckPress = () => {
                       if (!released) {
@@ -360,11 +363,11 @@ export default function ShowDetailScreen() {
                               ? (isWatched
                                 ? t('tv.openEpisode', {
                                   code,
-                                  title: episodeTitle(t, episode) || t('trakt.unavailable'),
+                                  title,
                                 })
                                 : t('tv.markWatchedAndOpen', {
                                   code,
-                                  title: episodeTitle(t, episode) || t('trakt.unavailable'),
+                                  title,
                                 }))
                               : t('tv.episodeLocked', { code })
                           }
@@ -383,16 +386,17 @@ export default function ShowDetailScreen() {
                           accessibilityRole="button"
                           accessibilityLabel={t('tv.openEpisode', {
                             code,
-                            title: episodeTitle(t, episode) || t('trakt.unavailable'),
+                            title,
                           })}
                           onPress={openEpisode}
                           style={styles.episodeMain}
                         >
                           <View style={styles.episodeCopy}>
-                            <Text style={styles.episodeTitle}>
-                              {code} · {episodeTitle(t, episode) || t('trakt.unavailable')}
+                            <EpisodeIdentifier episode={episode} />
+                            <Text style={styles.episodeTitle} numberOfLines={2}>
+                              {title}
                             </Text>
-                            <Text style={styles.meta}>
+                            <Text style={styles.meta} numberOfLines={1}>
                               {released
                                 ? [
                                   episode.airDate ? t('tv.airedOn', { date: formatAirDate(episode.airDate) }) : null,
@@ -461,6 +465,20 @@ export default function ShowDetailScreen() {
             season: selectedEpisode.season,
             number: selectedEpisode.number,
           });
+        }}
+        onNextEpisode={() => {
+          if (!show || !selectedEpisode) {
+            return;
+          }
+          if (ratingTarget) {
+            // Keep existing rating/review sheet UX — do not discard an open draft.
+            return;
+          }
+          const next = getReleasedSuccessor(show, selectedEpisode.id);
+          if (!next?.id) {
+            return;
+          }
+          setSelectedEpisodeId(next.id);
         }}
       />
       <RatingSheet
@@ -696,6 +714,7 @@ const styles = StyleSheet.create({
   },
   episodeCopy: {
     flex: 1,
+    minWidth: 0,
     gap: 2,
   },
   episodeTitle: {

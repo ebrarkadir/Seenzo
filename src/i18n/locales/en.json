@@ -13,6 +13,9 @@
     "loading": "Loading…",
     "loadMore": "Load more",
     "episodeCode": "S{{season}}E{{episode}}",
+    "episodeId": "S{{season}} · E{{episode}}",
+    "seasonMark": "S{{season}}",
+    "episodeMark": "E{{episode}}",
     "minutes": "{{count}} min",
     "yourRating": "Your rating",
     "ratingValue": "{{rating}}/10"
@@ -486,6 +489,9 @@
     "feedFilterEmptyBody": "No activity matches this filter yet.",
     "profileReviews": {
       "title": "Reviews",
+      "titleWithCount": "Reviews ({{count}})",
+      "expandA11y": "Show reviews",
+      "collapseA11y": "Hide reviews",
       "subtitleOwner": "Your written reviews. Private ones stay visible only to you.",
       "subtitleOther": "Shared reviews you are allowed to see.",
       "filters": {
@@ -503,6 +509,10 @@
     },
     "friendsRatings": {
       "title": "Friends' Ratings",
+      "titleWithCount": "Friends' Ratings ({{count}})",
+      "expandA11y": "Show friends ratings",
+      "collapseA11y": "Hide friends ratings",
+      "subtitleHint": "Ratings from people you follow",
       "average": "{{rating}} / 10",
       "basedOn": "Based on {{count}} friends",
       "empty": "No ratings from your friends yet.",
@@ -847,6 +857,9 @@
     "episodeLocked": "{{code}} is not released yet",
     "nextUp": "Next episode",
     "nextEpisodeLabel": "Next episode · {{code}}",
+    "nextEpisodeHeading": "Next episode",
+    "nextEpisodeCta": "Next Episode →",
+    "nextEpisodeA11y": "Open next episode",
     "closeEpisode": "Close episode",
     "noEpisodeOverview": "No episode description available.",
     "removeShowTitle": "Remove this show?",

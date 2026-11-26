@@ -6,6 +6,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 
@@ -34,8 +35,9 @@ function FilterChip({ label, active, onPress, disabled }) {
 }
 
 /**
- * Profile Reviews section for own and other profiles.
+ * Profile Reviews section — Find People-style accordion.
  * Nested-scroll safe: uses Load more instead of an inner FlatList.
+ * Cards stay hidden until the user expands the row.
  */
 export default function ProfileReviewsSection({
   username,
@@ -43,6 +45,7 @@ export default function ProfileReviewsSection({
   enabled = true,
 }) {
   const { t } = useTranslation();
+  const [expanded, setExpanded] = useState(false);
   const [filter, setFilter] = useState('all');
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -52,6 +55,13 @@ export default function ProfileReviewsSection({
   const [unavailable, setUnavailable] = useState(false);
   const cursorRef = useRef({ updatedAt: null, id: null });
   const requestSeq = useRef(0);
+  const sectionKey = `${username || ''}:${isOwner ? 'owner' : 'other'}`;
+  const [expandedKey, setExpandedKey] = useState(sectionKey);
+
+  if (sectionKey !== expandedKey) {
+    setExpandedKey(sectionKey);
+    setExpanded(false);
+  }
 
   const load = useCallback(async ({ reset = false } = {}) => {
     if (!enabled || !username) {
@@ -173,88 +183,122 @@ export default function ProfileReviewsSection({
     }
   };
 
+  const reviewCount = !loading && !error && !unavailable && !hasMore && items.length > 0
+    ? items.length
+    : null;
+  const title = reviewCount != null
+    ? t('social.profileReviews.titleWithCount', { count: reviewCount })
+    : t('social.profileReviews.title');
+  const subtitle = isOwner
+    ? t('social.profileReviews.subtitleOwner')
+    : t('social.profileReviews.subtitleOther');
+
   return (
     <View style={styles.section}>
-      <View style={styles.header}>
-        <Text style={styles.title}>{t('social.profileReviews.title')}</Text>
-        <Text style={styles.subtitle}>
-          {isOwner
-            ? t('social.profileReviews.subtitleOwner')
-            : t('social.profileReviews.subtitleOther')}
-        </Text>
-      </View>
-
-      <View style={styles.filters}>
-        {PROFILE_REVIEW_FILTERS.map((key) => (
-          <FilterChip
-            key={key}
-            label={t(`social.profileReviews.filters.${key}`)}
-            active={filter === key}
-            disabled={loading}
-            onPress={() => {
-              if (filter === key) return;
-              setFilter(key);
-            }}
-          />
-        ))}
-      </View>
-
-      {unavailable ? (
-        <Text style={styles.emptyBody}>{t('social.profileReviews.unavailableBody')}</Text>
-      ) : null}
-
-      {loading ? (
-        <View style={styles.centered}>
-          <ActivityIndicator color={colors.primary} />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+        accessibilityLabel={
+          expanded
+            ? t('social.profileReviews.collapseA11y')
+            : t('social.profileReviews.expandA11y')
+        }
+        onPress={() => setExpanded((value) => !value)}
+        style={({ pressed }) => [styles.toggleRow, pressed && styles.pressed]}
+      >
+        <View style={styles.iconBadge}>
+          <Ionicons name="chatbubble-ellipses-outline" size={18} color={colors.primary} />
         </View>
-      ) : null}
-
-      {error && !loading ? (
-        <View style={styles.centered}>
-          <Text style={styles.emptyBody}>
-            {t(`social.errors.${error?.code}`, { defaultValue: t('social.errors.generic') })}
-          </Text>
-          <PrimaryButton
-            label={t('common.retry')}
-            onPress={() => {
-              cursorRef.current = { updatedAt: null, id: null };
-              load({ reset: true });
-            }}
-            style={styles.retry}
-          />
+        <View style={styles.copy}>
+          <Text style={styles.toggleTitle} numberOfLines={1}>{title}</Text>
+          <Text style={styles.toggleSubtitle} numberOfLines={1}>{subtitle}</Text>
         </View>
-      ) : null}
+        {loading && !expanded ? (
+          <ActivityIndicator color={colors.primary} size="small" />
+        ) : (
+          <Ionicons
+            name={expanded ? 'chevron-up' : 'chevron-down'}
+            size={16}
+            color={colors.textMuted}
+          />
+        )}
+      </Pressable>
 
-      {!loading && !error && !unavailable && items.length === 0 ? (
-        <Text style={styles.emptyBody}>
-          {isOwner
-            ? t('social.profileReviews.emptyOwner')
-            : t('social.profileReviews.emptyOther')}
-        </Text>
-      ) : null}
+      {expanded ? (
+        <View style={styles.body}>
+          <View style={styles.filters}>
+            {PROFILE_REVIEW_FILTERS.map((key) => (
+              <FilterChip
+                key={key}
+                label={t(`social.profileReviews.filters.${key}`)}
+                active={filter === key}
+                disabled={loading}
+                onPress={() => {
+                  if (filter === key) return;
+                  setFilter(key);
+                }}
+              />
+            ))}
+          </View>
 
-      {items.map((item) => (
-        <ProfileReviewCard
-          key={item.id}
-          item={item}
-          showPrivacyBadge={isOwner}
-          onPressMedia={() => openMedia(item)}
-          onPressDiscussion={() => {
-            if (item.activityId) {
-              router.push(`/social/discussion?activityId=${encodeURIComponent(item.activityId)}`);
-            }
-          }}
-        />
-      ))}
+          {unavailable ? (
+            <Text style={styles.emptyBody}>{t('social.profileReviews.unavailableBody')}</Text>
+          ) : null}
 
-      {hasMore && !loading && !unavailable ? (
-        <PrimaryButton
-          label={loadingMore ? t('common.loading') : t('common.loadMore')}
-          variant="secondary"
-          disabled={loadingMore}
-          onPress={() => load({ reset: false })}
-          style={styles.loadMore}
-        />
+          {loading ? (
+            <View style={styles.centered}>
+              <ActivityIndicator color={colors.primary} />
+            </View>
+          ) : null}
+
+          {error && !loading ? (
+            <View style={styles.centered}>
+              <Text style={styles.emptyBody}>
+                {t(`social.errors.${error?.code}`, { defaultValue: t('social.errors.generic') })}
+              </Text>
+              <PrimaryButton
+                label={t('common.retry')}
+                onPress={() => {
+                  cursorRef.current = { updatedAt: null, id: null };
+                  load({ reset: true });
+                }}
+                style={styles.retry}
+              />
+            </View>
+          ) : null}
+
+          {!loading && !error && !unavailable && items.length === 0 ? (
+            <Text style={styles.emptyBody}>
+              {isOwner
+                ? t('social.profileReviews.emptyOwner')
+                : t('social.profileReviews.emptyOther')}
+            </Text>
+          ) : null}
+
+          {items.map((item) => (
+            <ProfileReviewCard
+              key={item.id}
+              item={item}
+              showPrivacyBadge={isOwner}
+              onPressMedia={() => openMedia(item)}
+              onPressDiscussion={() => {
+                if (item.activityId) {
+                  router.push(`/social/discussion?activityId=${encodeURIComponent(item.activityId)}`);
+                }
+              }}
+            />
+          ))}
+
+          {hasMore && !loading && !unavailable ? (
+            <PrimaryButton
+              label={loadingMore ? t('common.loading') : t('common.loadMore')}
+              variant="secondary"
+              disabled={loadingMore}
+              onPress={() => load({ reset: false })}
+              style={styles.loadMore}
+            />
+          ) : null}
+        </View>
       ) : null}
     </View>
   );
@@ -265,17 +309,48 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingTop: spacing.sm,
   },
-  header: {
-    paddingHorizontal: spacing.md,
+  toggleRow: {
+    marginHorizontal: spacing.md,
+    minHeight: 56,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  pressed: {
+    opacity: 0.88,
+  },
+  iconBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: radii.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  copy: {
+    flex: 1,
+    minWidth: 0,
     gap: 2,
   },
-  title: {
-    ...typography.subtitle,
+  toggleTitle: {
+    ...typography.label,
     color: colors.text,
+    fontWeight: '700',
   },
-  subtitle: {
+  toggleSubtitle: {
     ...typography.caption,
     color: colors.textSecondary,
+  },
+  body: {
+    gap: spacing.sm,
   },
   filters: {
     flexDirection: 'row',

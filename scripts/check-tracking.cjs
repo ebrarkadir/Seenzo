@@ -19,6 +19,7 @@ function loadModule(relativePath, returned) {
 const status = loadModule('src/tracking/status.js', [
   'deriveShowStatus',
   'getNextEpisode',
+  'getReleasedSuccessor',
   'getProgress',
   'releasedEpisodes',
   'watchedThroughIds',
@@ -118,7 +119,7 @@ movies.forEach((movie) => {
 });
 const progress = loadModules(
   ['src/tracking/status.js', 'src/tracking/progress.js'],
-  'markNextReleased, toggleReleasedEpisode, undoAddedEpisodes, undoEpisodeChanges, markSeasonWatched, markSeasonUnwatched, markShowWatched, deriveShowStatus, getNextEpisode, getProgress, getSeasonProgress, listShowSeasons, releasedEpisodes'
+  'markNextReleased, toggleReleasedEpisode, undoAddedEpisodes, undoEpisodeChanges, markSeasonWatched, markSeasonUnwatched, markShowWatched, deriveShowStatus, getNextEpisode, getReleasedSuccessor, getProgress, getSeasonProgress, listShowSeasons, releasedEpisodes'
 );
 
 function episode(id, season, number, airDate) {
@@ -155,6 +156,11 @@ const series = {
 };
 const releasedIds = progress.releasedEpisodes(series, TODAY).map((item) => item.id);
 expect('released order skips specials, duplicates, undated and future episodes', releasedIds, ['s1e1', 's1e3', 's2e1']);
+expect('successor of s1e1 skips undated hole', progress.getReleasedSuccessor(series, 's1e1', TODAY).id, 's1e3');
+expect('successor crosses into next season', progress.getReleasedSuccessor(series, 's1e3', TODAY).id, 's2e1');
+expect('last released has no successor', progress.getReleasedSuccessor(series, 's2e1', TODAY), null);
+expect('specials are not in successor chain', progress.getReleasedSuccessor(series, 'special', TODAY), null);
+expect('unknown episode has no successor', progress.getReleasedSuccessor(series, 'missing-id', TODAY), null);
 expect('episode count metadata does not inflate progress', progress.getProgress(series, { watchedEpisodeIds: [] }, TODAY).total, 3);
 expect('future ids already stored are not counted', progress.getProgress(series, { watchedEpisodeIds: ['s1e1', 's1e1', 's2future', 'special'] }, TODAY).watched, 1);
 

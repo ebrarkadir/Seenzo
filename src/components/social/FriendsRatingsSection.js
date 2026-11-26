@@ -27,6 +27,7 @@ function formatAverage(value) {
 
 /**
  * Friends' Ratings block for movie/show detail.
+ * Collapsed by default; keeps existing fetch lifecycle (no extra backend calls).
  * Does not replace Trakt or personal ratings.
  */
 export default function FriendsRatingsSection({
@@ -35,6 +36,9 @@ export default function FriendsRatingsSection({
   enabled = true,
 }) {
   const { t } = useTranslation();
+  const mediaKey = `${mediaType || ''}:${mediaId || ''}`;
+  const [expanded, setExpanded] = useState(false);
+  const [expandedMediaKey, setExpandedMediaKey] = useState(mediaKey);
   const [summary, setSummary] = useState(null);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -44,6 +48,12 @@ export default function FriendsRatingsSection({
   const [error, setError] = useState(null);
   const offsetRef = useRef(0);
   const requestSeq = useRef(0);
+
+  // Collapse when navigating to a different title (same component instance).
+  if (mediaKey !== expandedMediaKey) {
+    setExpandedMediaKey(mediaKey);
+    setExpanded(false);
+  }
 
   const load = useCallback(async ({ reset = false } = {}) => {
     if (!enabled || !mediaType || !mediaId) {
@@ -170,94 +180,132 @@ export default function FriendsRatingsSection({
     return null;
   }
 
+  const friendCount = summary?.ratingCount;
+  const title = friendCount != null && friendCount > 0
+    ? t('social.friendsRatings.titleWithCount', { count: friendCount })
+    : t('social.friendsRatings.title');
+
   return (
     <View style={styles.section}>
-      <Text style={styles.title}>{t('social.friendsRatings.title')}</Text>
-
-      {loading ? (
-        <View style={styles.centered}>
-          <ActivityIndicator color={colors.primary} />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+        accessibilityLabel={
+          expanded
+            ? t('social.friendsRatings.collapseA11y')
+            : t('social.friendsRatings.expandA11y')
+        }
+        onPress={() => setExpanded((value) => !value)}
+        style={({ pressed }) => [styles.toggleRow, pressed && styles.pressed]}
+      >
+        <View style={styles.iconBadge}>
+          <Ionicons name="people-outline" size={18} color={colors.primary} />
         </View>
-      ) : null}
-
-      {error && !loading ? (
-        <Pressable onPress={() => load({ reset: true })} style={styles.centered}>
-          <Text style={styles.empty}>
-            {t(`social.errors.${error?.code}`, { defaultValue: t('social.errors.generic') })}
+        <View style={styles.copy}>
+          <Text style={styles.toggleTitle} numberOfLines={1}>{title}</Text>
+          <Text style={styles.toggleSubtitle} numberOfLines={1}>
+            {friendCount != null && friendCount > 0
+              ? t('social.friendsRatings.basedOn', { count: friendCount })
+              : t('social.friendsRatings.subtitleHint')}
           </Text>
-          <Text style={styles.retry}>{t('common.retry')}</Text>
-        </Pressable>
-      ) : null}
+        </View>
+        {loading && !expanded ? (
+          <ActivityIndicator color={colors.primary} size="small" />
+        ) : (
+          <Ionicons
+            name={expanded ? 'chevron-up' : 'chevron-down'}
+            size={16}
+            color={colors.textMuted}
+          />
+        )}
+      </Pressable>
 
-      {!loading && !error && (summary?.ratingCount || 0) === 0 ? (
-        <Text style={styles.empty}>{t('social.friendsRatings.empty')}</Text>
-      ) : null}
-
-      {!loading && !error && (summary?.ratingCount || 0) > 0 ? (
-        <>
-          <View style={styles.summary}>
-            <Text style={styles.average}>
-              {t('social.friendsRatings.average', {
-                rating: formatAverage(summary.average),
-              })}
-            </Text>
-            <Text style={styles.count}>
-              {t('social.friendsRatings.basedOn', { count: summary.ratingCount })}
-            </Text>
-            <View style={styles.avatars}>
-              {items.slice(0, 5).map((item) => (
-                <View key={item.activityId || item.actor?.userId} style={styles.avatarWrap}>
-                  {item.actor?.avatarUrl ? (
-                    <Image source={{ uri: item.actor.avatarUrl }} style={styles.avatar} />
-                  ) : (
-                    <View style={styles.avatarFallback}>
-                      <Ionicons name="person" size={12} color={colors.primary} />
-                    </View>
-                  )}
-                </View>
-              ))}
+      {expanded ? (
+        <View style={styles.body}>
+          {loading ? (
+            <View style={styles.centered}>
+              <ActivityIndicator color={colors.primary} />
             </View>
-          </View>
+          ) : null}
 
-          <View style={styles.divider} />
+          {error && !loading ? (
+            <Pressable onPress={() => load({ reset: true })} style={styles.centered}>
+              <Text style={styles.empty}>
+                {t(`social.errors.${error?.code}`, { defaultValue: t('social.errors.generic') })}
+              </Text>
+              <Text style={styles.retry}>{t('common.retry')}</Text>
+            </Pressable>
+          ) : null}
 
-          {items.map((item) => {
-            const handle = item.actor?.username ? `@${item.actor.username}` : item.actor?.displayName;
-            return (
-              <View key={item.activityId || `${item.actor?.userId}:${item.rating}`} style={styles.row}>
-                <View style={styles.rowTop}>
-                  <Pressable
-                    style={styles.userHit}
-                    onPress={() => {
-                      if (item.actor?.username) {
-                        router.push(`/user/${encodeURIComponent(item.actor.username)}`);
-                      }
-                    }}
-                  >
-                    {item.actor?.avatarUrl ? (
-                      <Image source={{ uri: item.actor.avatarUrl }} style={styles.rowAvatar} />
-                    ) : (
-                      <View style={[styles.rowAvatar, styles.avatarFallback]}>
-                        <Ionicons name="person" size={14} color={colors.primary} />
-                      </View>
-                    )}
-                    <Text style={styles.handle} numberOfLines={1}>{handle}</Text>
-                  </Pressable>
-                  <Text style={styles.score}>
-                    {Number(item.rating).toFixed(Number.isInteger(Number(item.rating)) ? 0 : 1)}
-                  </Text>
+          {!loading && !error && (summary?.ratingCount || 0) === 0 ? (
+            <Text style={styles.empty}>{t('social.friendsRatings.empty')}</Text>
+          ) : null}
+
+          {!loading && !error && (summary?.ratingCount || 0) > 0 ? (
+            <>
+              <View style={styles.summary}>
+                <Text style={styles.average}>
+                  {t('social.friendsRatings.average', {
+                    rating: formatAverage(summary.average),
+                  })}
+                </Text>
+                <Text style={styles.count}>
+                  {t('social.friendsRatings.basedOn', { count: summary.ratingCount })}
+                </Text>
+                <View style={styles.avatars}>
+                  {items.slice(0, 5).map((item) => (
+                    <View key={item.activityId || item.actor?.userId} style={styles.avatarWrap}>
+                      {item.actor?.avatarUrl ? (
+                        <Image source={{ uri: item.actor.avatarUrl }} style={styles.avatar} />
+                      ) : (
+                        <View style={styles.avatarFallback}>
+                          <Ionicons name="person" size={12} color={colors.primary} />
+                        </View>
+                      )}
+                    </View>
+                  ))}
                 </View>
-                {item.hasReview && item.activityId ? (
-                  <Pressable
-                    onPress={() => {
-                      router.push(`/social/discussion?activityId=${encodeURIComponent(item.activityId)}`);
-                    }}
-                    hitSlop={8}
-                    style={styles.reviewHit}
-                  >
-                    <Text style={styles.reviewLink}>{t('social.friendsRatings.review')}</Text>
-                  </Pressable>
-                ) : null}
+              </View>
+
+              <View style={styles.divider} />
+
+              {items.map((item) => {
+                const handle = item.actor?.username ? `@${item.actor.username}` : item.actor?.displayName;
+                return (
+                  <View key={item.activityId || `${item.actor?.userId}:${item.rating}`} style={styles.row}>
+                    <View style={styles.rowTop}>
+                      <Pressable
+                        style={styles.userHit}
+                        onPress={() => {
+                          if (item.actor?.username) {
+                            router.push(`/user/${encodeURIComponent(item.actor.username)}`);
+                          }
+                        }}
+                      >
+                        {item.actor?.avatarUrl ? (
+                          <Image source={{ uri: item.actor.avatarUrl }} style={styles.rowAvatar} />
+                        ) : (
+                          <View style={[styles.rowAvatar, styles.avatarFallback]}>
+                            <Ionicons name="person" size={14} color={colors.primary} />
+                          </View>
+                        )}
+                        <Text style={styles.handle} numberOfLines={1}>{handle}</Text>
+                      </Pressable>
+                      <Text style={styles.score}>
+                        {Number(item.rating).toFixed(Number.isInteger(Number(item.rating)) ? 0 : 1)}
+                      </Text>
+                    </View>
+                    {item.hasReview && item.activityId ? (
+                      <Pressable
+                        onPress={() => {
+                          router.push(`/social/discussion?activityId=${encodeURIComponent(item.activityId)}`);
+                        }}
+                        hitSlop={8}
+                        style={styles.reviewHit}
+                      >
+                        <Text style={styles.reviewLink}>{t('social.friendsRatings.review')}</Text>
+                      </Pressable>
+                    ) : null}
                 {item.reviewText ? (
                   <View style={styles.preview}>
                     <SpoilerReviewBlock
@@ -268,26 +316,29 @@ export default function FriendsRatingsSection({
                           : item.reviewText
                       }
                       containsSpoilers={Boolean(item.reviewContainsSpoilers)}
+                      compact
                     />
                   </View>
                 ) : null}
-              </View>
-            );
-          })}
+                  </View>
+                );
+              })}
 
-          {hasMore ? (
-            <Pressable
-              accessibilityRole="button"
-              disabled={loadingMore}
-              onPress={() => load({ reset: false })}
-              style={styles.seeAll}
-            >
-              <Text style={styles.seeAllText}>
-                {loadingMore ? t('common.loading') : t('social.friendsRatings.seeAll')}
-              </Text>
-            </Pressable>
+              {hasMore ? (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={loadingMore}
+                  onPress={() => load({ reset: false })}
+                  style={styles.seeAll}
+                >
+                  <Text style={styles.seeAllText}>
+                    {loadingMore ? t('common.loading') : t('social.friendsRatings.seeAll')}
+                  </Text>
+                </Pressable>
+              ) : null}
+            </>
           ) : null}
-        </>
+        </View>
       ) : null}
     </View>
   );
@@ -296,17 +347,54 @@ export default function FriendsRatingsSection({
 const styles = StyleSheet.create({
   section: {
     marginTop: spacing.sm,
+    gap: spacing.sm,
+  },
+  toggleRow: {
+    minHeight: 56,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  pressed: {
+    opacity: 0.88,
+  },
+  iconBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: radii.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  copy: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  toggleTitle: {
+    ...typography.label,
+    color: colors.text,
+    fontWeight: '700',
+  },
+  toggleSubtitle: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  body: {
     padding: spacing.md,
     borderRadius: radii.lg,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
     gap: spacing.sm,
-  },
-  title: {
-    ...typography.subtitle,
-    fontSize: 16,
-    color: colors.text,
   },
   centered: {
     paddingVertical: spacing.md,
@@ -378,6 +466,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+    minHeight: 36,
   },
   rowAvatar: {
     width: 28,
@@ -398,6 +487,8 @@ const styles = StyleSheet.create({
   },
   reviewHit: {
     marginLeft: 36,
+    minHeight: 28,
+    justifyContent: 'center',
   },
   reviewLink: {
     ...typography.label,
@@ -409,6 +500,8 @@ const styles = StyleSheet.create({
   seeAll: {
     alignSelf: 'flex-start',
     paddingVertical: spacing.xs,
+    minHeight: 32,
+    justifyContent: 'center',
   },
   seeAllText: {
     ...typography.label,

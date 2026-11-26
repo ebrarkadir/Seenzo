@@ -6,12 +6,13 @@ import { colors, radii, spacing, typography } from '../../theme';
 import ReviewInteractionBar from './ReviewInteractionBar';
 import SpoilerReviewBlock from './SpoilerReviewBlock';
 
-const POSTER_WIDTH = 56;
-const POSTER_HEIGHT = 84;
+const POSTER_WIDTH = 44;
+const POSTER_HEIGHT = 66;
+const AVATAR = 28;
 
 /**
  * Presentational card for friends-activity items.
- * Render only real API payloads — never fabricate activity.
+ * Dense layout: smaller chrome, full review text (spoiler-gated), actions preserved.
  *
  * Supported activityType values (Social V3):
  * movie_watched | episode_watched | movie_rated | show_rated | episode_rated
@@ -60,16 +61,20 @@ export default function ActivityFeedCard({
           <Image source={{ uri: avatarUrl }} style={styles.avatar} />
         ) : (
           <View style={styles.avatarFallback}>
-            <Ionicons name="person" size={18} color={colors.primary} />
+            <Ionicons name="person" size={14} color={colors.primary} />
           </View>
         )}
         <View style={styles.userCopy}>
-          <Text style={styles.name} numberOfLines={1}>{name}</Text>
-          <Text style={styles.action} numberOfLines={2}>
+          <View style={styles.nameRow}>
+            <Text style={styles.name} numberOfLines={1}>{name}</Text>
+            {relativeTime ? (
+              <Text style={styles.time} numberOfLines={1}>{relativeTime}</Text>
+            ) : null}
+          </View>
+          <Text style={styles.action} numberOfLines={1}>
             {actionLabel}
-            {relativeTime ? <Text style={styles.time}>{` · ${relativeTime}`}</Text> : null}
+            {handle ? <Text style={styles.handle}>{` · ${handle}`}</Text> : null}
           </Text>
-          {handle ? <Text style={styles.handle} numberOfLines={1}>{handle}</Text> : null}
         </View>
       </Pressable>
 
@@ -89,17 +94,17 @@ export default function ActivityFeedCard({
           />
         ) : (
           <View style={[styles.poster, styles.posterFallback]}>
-            <Ionicons name="film-outline" size={22} color={colors.textMuted} />
+            <Ionicons name="film-outline" size={18} color={colors.textMuted} />
           </View>
         )}
         <View style={styles.mediaCopy}>
           <Text style={styles.mediaTitle} numberOfLines={2}>{mediaTitle}</Text>
           {mediaMeta ? (
-            <Text style={styles.mediaMeta} numberOfLines={2}>{mediaMeta}</Text>
+            <Text style={styles.mediaMeta} numberOfLines={1}>{mediaMeta}</Text>
           ) : null}
           {score ? (
             <View style={styles.ratingRow}>
-              <Ionicons name="star" size={14} color={colors.primary} />
+              <Ionicons name="star" size={12} color={colors.primary} />
               <Text style={styles.rating}>{score}</Text>
             </View>
           ) : null}
@@ -111,6 +116,7 @@ export default function ActivityFeedCard({
           resetKey={id}
           reviewText={reviewText}
           containsSpoilers={Boolean(reviewContainsSpoilers)}
+          compact
         />
       ) : null}
 
@@ -134,28 +140,30 @@ export default function ActivityFeedCard({
 const styles = StyleSheet.create({
   card: {
     marginHorizontal: spacing.md,
-    marginBottom: spacing.md,
-    padding: spacing.md,
+    marginBottom: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
     borderRadius: radii.lg,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    gap: spacing.md,
+    gap: spacing.xs,
   },
   userRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: spacing.sm,
+    minHeight: AVATAR,
   },
   avatar: {
-    width: 40,
-    height: 40,
+    width: AVATAR,
+    height: AVATAR,
     borderRadius: radii.full,
     backgroundColor: colors.surfaceElevated,
   },
   avatarFallback: {
-    width: 40,
-    height: 40,
+    width: AVATAR,
+    height: AVATAR,
     borderRadius: radii.full,
     alignItems: 'center',
     justifyContent: 'center',
@@ -166,30 +174,37 @@ const styles = StyleSheet.create({
   userCopy: {
     flex: 1,
     minWidth: 0,
-    gap: 2,
+    gap: 1,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   name: {
     ...typography.body,
+    fontSize: 14,
+    lineHeight: 18,
     fontWeight: '700',
     color: colors.text,
+    flexShrink: 1,
   },
   action: {
     ...typography.caption,
     color: colors.textSecondary,
   },
   time: {
+    ...typography.label,
     color: colors.textMuted,
+    marginLeft: 'auto',
   },
   handle: {
-    ...typography.caption,
     color: colors.textMuted,
   },
   mediaRow: {
     flexDirection: 'row',
-    gap: spacing.md,
-    paddingTop: spacing.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
+    gap: spacing.sm,
+    alignItems: 'center',
   },
   poster: {
     width: POSTER_WIDTH,
@@ -207,10 +222,12 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     justifyContent: 'center',
-    gap: 4,
+    gap: 2,
   },
   mediaTitle: {
     ...typography.body,
+    fontSize: 14,
+    lineHeight: 18,
     fontWeight: '600',
     color: colors.text,
   },
@@ -221,8 +238,7 @@ const styles = StyleSheet.create({
   ratingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    marginTop: 2,
+    gap: 3,
   },
   rating: {
     ...typography.label,

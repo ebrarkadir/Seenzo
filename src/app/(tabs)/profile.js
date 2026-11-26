@@ -181,6 +181,15 @@ export default function ProfileScreen() {
           onPressInsights={() => router.push('/insights')}
         />
 
+        {signedIn && profile?.username && !demoMode ? (
+          <ProfileReviewsSection
+            key={`reviews:${userId}:${profile.username}`}
+            username={profile.username}
+            isOwner
+            enabled
+          />
+        ) : null}
+
         {signedIn ? (
           <FindPeopleRow
             onPress={() => router.push({ pathname: '/(tabs)/social', params: { section: 'people' } })}
@@ -224,15 +233,6 @@ export default function ProfileScreen() {
           onMoveLeft={(position) => moveFavorite('movie', position, position - 1)}
           onMoveRight={(position) => moveFavorite('movie', position, position + 1)}
         />
-
-        {signedIn && profile?.username && !demoMode ? (
-          <ProfileReviewsSection
-            key={`reviews:${userId}:${profile.username}`}
-            username={profile.username}
-            isOwner
-            enabled
-          />
-        ) : null}
 
         {setupUnavailable && signedIn ? (
           <Text style={styles.metaPad}>{t('profile.favoritesUnavailableBody')}</Text>

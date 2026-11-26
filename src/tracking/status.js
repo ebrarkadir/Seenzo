@@ -66,6 +66,19 @@ export function getNextEpisode(show, entry, today = dateKey()) {
   return releasedEpisodes(show, today).find((episode) => !watched.has(episode.id)) || null;
 }
 
+/** Next released regular episode after `episodeId` (skips season 0). Null if unknown or last. */
+export function getReleasedSuccessor(show, episodeId, today = dateKey()) {
+  if (!episodeId) {
+    return null;
+  }
+  const released = releasedEpisodes(show, today);
+  const index = released.findIndex((episode) => episode.id === episodeId);
+  if (index < 0 || index >= released.length - 1) {
+    return null;
+  }
+  return released[index + 1];
+}
+
 export function getProgress(show, entry, today = dateKey()) {
   const released = releasedEpisodes(show, today);
   const watched = new Set(entry?.watchedEpisodeIds || []);

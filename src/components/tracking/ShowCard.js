@@ -14,6 +14,7 @@ import {
   isReleased,
   lastWatchedEpisode,
 } from '../../tracking/status';
+import EpisodeIdentifier from './EpisodeIdentifier';
 
 function codeLabel(t, episode) {
   return t('common.episodeCode', episodeCode(episode));
@@ -122,9 +123,10 @@ export default function ShowCard({
             onPress={openNextEpisode}
             style={styles.nextInfo}
           >
-            <Text style={styles.nextKicker}>
-              {t('tv.nextEpisodeLabel', { code: codeLabel(t, next) })}
-            </Text>
+            <View style={styles.nextLabelRow}>
+              <Text style={styles.nextHeading}>{t('tv.nextEpisodeHeading')}</Text>
+              <EpisodeIdentifier episode={next} size="pill" />
+            </View>
             <Text style={styles.nextTitle} numberOfLines={2}>
               {episodeTitle(t, next) || t('trakt.unavailable')}
             </Text>
@@ -202,20 +204,35 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   nextBlock: {
-    gap: spacing.sm,
+    gap: 6,
     paddingTop: spacing.sm,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
   },
   nextInfo: {
-    gap: 4,
+    gap: 3,
+    minWidth: 0,
   },
-  nextKicker: {
+  nextLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    minWidth: 0,
+  },
+  nextHeading: {
     ...typography.label,
-    color: colors.primary,
+    fontSize: 11,
+    lineHeight: 14,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    color: colors.textSecondary,
   },
   nextTitle: {
     ...typography.body,
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '600',
     color: colors.text,
   },
   markButton: {

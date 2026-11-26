@@ -10,14 +10,16 @@ import { useTranslation } from 'react-i18next';
 
 import { colors, radii, spacing, typography } from '../../theme';
 
-function SpoilerGate({ reviewText, containsSpoilers }) {
+function SpoilerGate({ reviewText, containsSpoilers, compact }) {
   const { t } = useTranslation();
   const [revealed, setRevealed] = useState(false);
 
   if (!containsSpoilers || revealed) {
     return (
-      <View style={styles.revealed}>
-        <Text style={styles.reviewText}>{reviewText}</Text>
+      <View style={compact ? styles.revealedCompact : styles.revealed}>
+        <Text style={[styles.reviewText, compact && styles.reviewTextCompact]}>
+          {reviewText}
+        </Text>
         {containsSpoilers ? (
           <Pressable
             accessibilityRole="button"
@@ -38,9 +40,12 @@ function SpoilerGate({ reviewText, containsSpoilers }) {
       accessibilityRole="button"
       accessibilityLabel={t('social.activity.spoilers.revealA11y')}
       onPress={() => setRevealed(true)}
-      style={({ pressed }) => [styles.hidden, pressed && styles.pressed]}
+      style={({ pressed }) => [
+        compact ? styles.hiddenCompact : styles.hidden,
+        pressed && styles.pressed,
+      ]}
     >
-      <Ionicons name="eye-off" size={18} color={colors.textMuted} />
+      <Ionicons name="eye-off" size={compact ? 16 : 18} color={colors.textMuted} />
       <Text style={styles.hiddenTitle}>{t('social.activity.spoilers.title')}</Text>
       <Text style={styles.hiddenHint}>{t('social.activity.spoilers.tap')}</Text>
     </Pressable>
@@ -55,6 +60,7 @@ export default function SpoilerReviewBlock({
   reviewText,
   containsSpoilers = false,
   resetKey = null,
+  compact = false,
 }) {
   if (!reviewText) {
     return null;
@@ -65,6 +71,7 @@ export default function SpoilerReviewBlock({
       key={`${resetKey || 'review'}:${containsSpoilers}:${reviewText}`}
       reviewText={reviewText}
       containsSpoilers={containsSpoilers}
+      compact={compact}
     />
   );
 }
@@ -80,6 +87,17 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     alignItems: 'center',
     gap: spacing.xs,
+  },
+  hiddenCompact: {
+    marginTop: spacing.xs,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radii.md,
+    backgroundColor: colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    gap: 2,
   },
   pressed: {
     opacity: 0.9,
@@ -99,10 +117,18 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     gap: spacing.xs,
   },
+  revealedCompact: {
+    marginTop: spacing.xs,
+    gap: 2,
+  },
   reviewText: {
     ...typography.body,
     color: colors.textSecondary,
     fontStyle: 'italic',
+  },
+  reviewTextCompact: {
+    ...typography.caption,
+    lineHeight: 18,
   },
   hideAction: {
     alignSelf: 'flex-start',

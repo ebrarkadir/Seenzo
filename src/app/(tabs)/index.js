@@ -17,7 +17,13 @@ import { resolveShow, useMediaRevision } from '../../data/mediaLibrary';
 import { colors, spacing, typography } from '../../theme';
 import { useTracking } from '../../tracking/TrackingContext';
 import { useUndoTimer } from '../../tracking/useUndoTimer';
-import { deriveShowStatus, episodeCode, listEpisodes, upcomingForShows } from '../../tracking/status';
+import {
+  deriveShowStatus,
+  episodeCode,
+  getReleasedSuccessor,
+  listEpisodes,
+  upcomingForShows,
+} from '../../tracking/status';
 
 export default function TvShowsScreen() {
   const { t } = useTranslation();
@@ -197,6 +203,20 @@ export default function TvShowsScreen() {
             season: selectedEpisode.season,
             number: selectedEpisode.number,
           });
+        }}
+        onNextEpisode={() => {
+          if (!selectedShow || !selectedEpisode) {
+            return;
+          }
+          if (ratingTarget) {
+            // Keep existing rating/review sheet UX — do not discard an open draft.
+            return;
+          }
+          const next = getReleasedSuccessor(selectedShow, selectedEpisode.id);
+          if (!next?.id) {
+            return;
+          }
+          setSelected({ showId: selectedShow.id, episodeId: next.id });
         }}
       />
       <RatingSheet
