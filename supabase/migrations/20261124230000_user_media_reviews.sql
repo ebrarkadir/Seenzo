@@ -113,6 +113,10 @@ comment on table public.user_media_reviews is
   'Private optional reviews for rated media. Followers read text only via list_following_activity when the author has sharing enabled and an approved follow edge exists. No broad public SELECT.';
 
 -- Extend follower feed with optional review projection (no backfill).
+-- Postgres forbids CREATE OR REPLACE when RETURNS TABLE / OUT row type changes.
+-- Drop by exact signature only (no CASCADE); no views/triggers depend on this RPC.
+drop function if exists public.list_following_activity(integer, timestamptz, uuid);
+
 create or replace function public.list_following_activity(
   p_limit integer default 20,
   p_cursor_created_at timestamptz default null,
