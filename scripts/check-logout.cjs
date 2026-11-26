@@ -143,6 +143,7 @@ const onboarding = read('src/app/onboarding.js');
 
 expect('signOut clears React session before awaiting storage', /setSession\(null\);[\s\S]*signOut\(\{ scope: 'local' \}\)/.test(auth));
 expect('signOut uses local scope', auth.includes("signOut({ scope: 'local' })"));
+expect('signOut ignores re-auth during logout', auth.includes('signingOutRef') && auth.includes('auth_state_ignored_during_signout'));
 expect('routing helper used by layout', layout.includes('resolveRootRedirect'));
 expect('routing helper used by index', index.includes('resolveSessionDestination'));
 expect('index no longer sends signed-out complete guests to tabs', !index.includes("reason: 'guest_complete'"));

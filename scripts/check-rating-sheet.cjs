@@ -79,8 +79,10 @@ expect(
   movieSheet.includes('movieSheetVisible') && movieSheet.includes('!ratingOpen')
 );
 expect(
-  'show detail hides episode sheet while rating episode',
-  showSource.includes("ratingTarget?.type !== 'episode'")
+  'show detail hides episode sheet while rating',
+  showSource.includes('Boolean(selectedEpisode) && !ratingTarget')
+    && showSource.includes('setSelectedEpisodeId(null)')
+    && showSource.includes("setRatingTarget({ type: 'show' })")
 );
 expect(
   'tv home hides episode sheet while rating',

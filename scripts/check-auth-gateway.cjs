@@ -49,6 +49,8 @@ expect('auth gateway i18n keys exist', Boolean(en.authGateway?.title && en.authG
 expect('onboarding complete still derived from account/cache state', sync.includes('cache.state.onboardingComplete') && sync.includes('remoteHasRows'));
 expect('email callback flow checks remain', deeplink.includes('seenzo://auth/callback'));
 expect('welcome route collapses onto index', welcome.includes("router.replace('/')"));
+expect('welcome uses session routing helper', welcome.includes('resolveSessionDestination'));
+expect('welcome does not send signed-out complete users to tabs', !/if \(onboardingComplete\) \{\s*router\.replace\('\/\(tabs\)'\)/.test(welcome));
 
 const failed = checks.filter((check) => !check.pass);
 if (failed.length) {

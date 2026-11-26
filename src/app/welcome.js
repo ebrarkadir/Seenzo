@@ -3,6 +3,7 @@ import { View } from 'react-native';
 import { router } from 'expo-router';
 
 import { useAuth } from '../auth/AuthContext';
+import { resolveSessionDestination } from '../auth/sessionRouting';
 import AuthGateway from '../components/auth/AuthGateway';
 import { startupLog } from '../diagnostics/startup';
 import { colors } from '../theme';
@@ -14,24 +15,29 @@ import { useTracking } from '../tracking/TrackingContext';
  */
 export default function WelcomeGatewayScreen() {
   const { ready: authReady, session } = useAuth();
-  const { ready, onboardingComplete } = useTracking();
+  const { ready, onboardingComplete, demoMode } = useTracking();
   const signedIn = Boolean(session?.user?.id);
+  const destination = resolveSessionDestination({
+    signedIn,
+    onboardingComplete,
+    demoMode,
+  });
 
   useEffect(() => {
     if (!authReady || !ready) {
       return;
     }
-    if (onboardingComplete) {
+    if (destination === 'tabs') {
       router.replace('/(tabs)');
       return;
     }
-    if (signedIn) {
+    if (destination === 'onboarding') {
       router.replace('/onboarding');
       return;
     }
     // Collapse duplicate gateway onto index to avoid stacked opaque screens.
     router.replace('/');
-  }, [authReady, onboardingComplete, ready, signedIn]);
+  }, [authReady, destination, ready]);
 
   useEffect(() => {
     startupLog('welcome_render', {
@@ -39,11 +45,13 @@ export default function WelcomeGatewayScreen() {
       trackingReady: ready,
       signedIn,
       onboardingComplete,
-      branch: (!authReady || !ready || signedIn || onboardingComplete) ? 'empty' : 'gateway',
+      demoMode,
+      destination,
+      branch: (!authReady || !ready || destination !== 'gateway') ? 'empty' : 'gateway',
     });
-  }, [authReady, onboardingComplete, ready, signedIn]);
+  }, [authReady, destination, demoMode, onboardingComplete, ready, signedIn]);
 
-  if (!authReady || !ready || signedIn || onboardingComplete) {
+  if (!authReady || !ready || destination !== 'gateway') {
     return <View style={{ flex: 1, backgroundColor: colors.background }} />;
   }
 

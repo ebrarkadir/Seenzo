@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import { getAuthEmailRedirectTo } from './authRedirect';
 import { normalizeAuthEmail, validateEmail } from './messages';
@@ -13,6 +13,7 @@ export function AuthProvider({ children }) {
   const config = getSupabaseConfig();
   const [session, setSession] = useState(null);
   const [ready, setReady] = useState(!config.ready);
+  const signingOutRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -60,8 +61,12 @@ export function AuthProvider({ children }) {
       }
     });
     const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
-      // Ignore remote events that would re-auth after an intentional local logout
-      // until storage has been cleared; local signOut still emits SIGNED_OUT.
+      // Ignore remote re-auth while an intentional logout is in flight.
+      // SIGNED_OUT (and null sessions) are still applied so routing stays cleared.
+      if (signingOutRef.current && nextSession?.user) {
+        logoutLog('auth_state_ignored_during_signout', { event });
+        return;
+      }
       setSession(nextSession ?? null);
       setReady(true);
       if (event === 'SIGNED_OUT') {
@@ -138,11 +143,13 @@ export function AuthProvider({ children }) {
   const signOut = useCallback(async () => {
     logoutLog('signout_started');
     const supabase = getSupabase();
+    signingOutRef.current = true;
     // Clear React auth state immediately so routing cannot wait on storage/network.
     setSession(null);
     logoutLog('auth_state_updated', { signedIn: false, phase: 'optimistic' });
 
     if (!supabase) {
+      signingOutRef.current = false;
       logoutLog('local_session_cleared', { mode: 'no_client' });
       return { error: null };
     }
@@ -165,6 +172,7 @@ export function AuthProvider({ children }) {
 
     // Ensure session stays cleared even if a late auth event raced in.
     setSession(null);
+    signingOutRef.current = false;
     logoutLog('local_session_cleared', {
       timedOut,
       hasError: Boolean(error && !timedOut),
