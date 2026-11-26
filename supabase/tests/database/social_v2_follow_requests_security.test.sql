@@ -45,7 +45,19 @@ select ok(
           and pol.polname = 'profile_media_select_discoverable_profiles'
       ),
       ''
-    ) like '%avatar_path% = name%'
+    ) like '%avatar_path%'
+      and coalesce(
+        (
+          select pg_get_expr(pol.polqual, pol.polrelid)
+          from pg_policy as pol
+          join pg_class as cls on cls.oid = pol.polrelid
+          join pg_namespace as nsp on nsp.oid = cls.relnamespace
+          where nsp.nspname = 'storage'
+            and cls.relname = 'objects'
+            and pol.polname = 'profile_media_select_discoverable_profiles'
+        ),
+        ''
+      ) like '%name%'
   ),
   'discoverable storage policy matches active avatar_path only'
 );
@@ -90,6 +102,7 @@ select results_eq(
   'duplicate request_or_follow returns the same pending request id'
 );
 
+reset role;
 select results_eq(
   $$select count(*)::int from public.social_notifications
     where recipient_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
@@ -106,6 +119,9 @@ select results_eq(
   array[0],
   'no follow edge before acceptance'
 );
+
+set local role authenticated;
+set local request.jwt.claim.sub = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 
 select throws_ok(
   $$select * from public.request_or_follow('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb')$$,
@@ -166,6 +182,7 @@ select lives_ok(
   'recipient can accept follow request'
 );
 
+reset role;
 select results_eq(
   $$select count(*)::int from public.profile_follows
     where follower_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
@@ -174,6 +191,7 @@ select results_eq(
   'follow edge created after acceptance'
 );
 
+set local role authenticated;
 set local request.jwt.claim.sub = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 select results_eq(
   $$select count(*)::int from public.social_notifications
@@ -198,6 +216,7 @@ select lives_ok(
   'requester can cancel own pending request'
 );
 
+reset role;
 select results_eq(
   $$select count(*)::int from public.social_notifications
     where recipient_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
@@ -208,6 +227,7 @@ select results_eq(
 );
 
 -- Backdate resolved request so cooldown does not block legitimate resend in tests.
+reset role;
 update public.profile_follow_requests
 set updated_at = now() - interval '2 minutes',
     resolved_at = now() - interval '2 minutes'
@@ -215,11 +235,15 @@ where requester_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
   and target_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
   and status = 'cancelled';
 
+set local role authenticated;
+set local request.jwt.claim.sub = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+
 select lives_ok(
   $$select * from public.request_or_follow('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')$$,
   'can resend follow request after cancel once cooldown elapsed'
 );
 
+reset role;
 select results_eq(
   $$select count(*)::int from public.social_notifications
     where recipient_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
@@ -229,6 +253,7 @@ select results_eq(
   'resend creates a fresh follow_request notification'
 );
 
+set local role authenticated;
 set local request.jwt.claim.sub = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 select lives_ok(
   $$select public.reject_follow_request(
@@ -241,6 +266,7 @@ select lives_ok(
   'recipient can reject follow request'
 );
 
+reset role;
 select results_eq(
   $$select count(*)::int from public.profile_follows
     where follower_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
@@ -250,12 +276,14 @@ select results_eq(
 );
 
 -- Unfollow / refollow notification lifecycle on a public profile
+set local role authenticated;
 set local request.jwt.claim.sub = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 select lives_ok(
   $$select * from public.request_or_follow('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb')$$,
   'private discoverable user can follow a public profile'
 );
 
+reset role;
 select results_eq(
   $$select count(*)::int from public.social_notifications
     where recipient_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
@@ -265,10 +293,13 @@ select results_eq(
   'public follow creates new_follower notification'
 );
 
+set local role authenticated;
+set local request.jwt.claim.sub = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 delete from public.profile_follows
 where follower_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
   and following_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 
+reset role;
 select results_eq(
   $$select count(*)::int from public.social_notifications
     where recipient_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
@@ -278,11 +309,14 @@ select results_eq(
   'unfollow clears prior new_follower notification'
 );
 
+set local role authenticated;
+set local request.jwt.claim.sub = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 select lives_ok(
   $$select * from public.request_or_follow('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb')$$,
   'can follow the same public profile again'
 );
 
+reset role;
 select results_eq(
   $$select count(*)::int from public.social_notifications
     where recipient_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
@@ -293,6 +327,7 @@ select results_eq(
 );
 
 -- Account-scoped notification reads / unauthorized mark-read
+set local role authenticated;
 set local request.jwt.claim.sub = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 select results_eq(
   $$select count(*)::int from public.list_social_notifications(0, 30)$$,
@@ -307,12 +342,28 @@ select results_eq(
   'unrelated users cannot read others notifications via table select'
 );
 
+-- Resolve target id with privileged role; RLS would hide other users' rows from gamma.
+reset role;
+select set_config(
+  'test.beta_notification_id',
+  (
+    select id::text
+    from public.social_notifications
+    where recipient_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+    order by created_at desc
+    limit 1
+  ),
+  true
+);
+
+set local role authenticated;
+set local request.jwt.claim.sub = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+
 select results_eq(
-  $$select public.mark_social_notification_read(
-      (select id from public.social_notifications
-        where recipient_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
-        limit 1)
-    )$$,
+  format(
+    'select public.mark_social_notification_read(%L::uuid)',
+    current_setting('test.beta_notification_id')
+  ),
   array[false],
   'cannot mark another users notification as read'
 );
@@ -350,6 +401,7 @@ select results_eq(
 );
 
 -- Existing approved follow remains after public -> private
+reset role;
 insert into public.profile_follows (follower_id, following_id)
 values ('dddddddd-dddd-dddd-dddd-dddddddddddd', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb')
 on conflict do nothing;
@@ -359,6 +411,7 @@ set is_public = false,
     allow_profile_discovery = false
 where user_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 
+set local role authenticated;
 set local request.jwt.claim.sub = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 select results_eq(
   $$select is_following from public.get_social_relationship('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb')$$,

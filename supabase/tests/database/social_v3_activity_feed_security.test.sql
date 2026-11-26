@@ -208,6 +208,8 @@ select lives_ok(
   'self rating publish succeeds for sharing-enabled account'
 );
 
+-- Direct table inspection uses privileged role; publish RPCs stay authenticated.
+reset role;
 select results_eq(
   $$select count(*)::int from public.social_activity_events
     where actor_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
@@ -217,11 +219,15 @@ select results_eq(
   'rating publish stores one movie_rated row'
 );
 
+set local role authenticated;
+set local request.jwt.claim.sub = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+
 -- Rating edit does not create a second row
 select public.publish_social_rating_event(
   'movie_rated', 'trakt-movie-7', null, null, null, 9
 );
 
+reset role;
 select results_eq(
   $$select count(*)::int from public.social_activity_events
     where actor_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'

@@ -1,7 +1,7 @@
 -- Requires 20261124230000_user_media_reviews.sql (+ Social V3).
 -- Not executed without a local/staging database.
 begin;
-select plan(10);
+select plan(9);
 
 insert into auth.users (id, email)
 values

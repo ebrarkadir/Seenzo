@@ -66,10 +66,20 @@ insert into public.media_entries (
   9
 ) on conflict do nothing;
 
--- Beta follows alpha.
-insert into public.profile_follows (follower_id, following_id)
-values ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-on conflict do nothing;
+-- Beta follows alpha (must predate activity for follow-since gates).
+insert into public.profile_follows (follower_id, following_id, created_at)
+values (
+  'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+  now() - interval '2 hours'
+)
+on conflict (follower_id, following_id) do update
+set created_at = excluded.created_at;
+
+update public.social_activity_events
+set created_at = now() - interval '1 hour'
+where actor_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+  and media_id = 'trakt-movie-501';
 
 -- Pending request from gamma is not enough.
 delete from public.profile_follow_requests
@@ -202,22 +212,22 @@ set local role anon;
 
 select throws_ok(
   $$select public.list_profile_reviews('alpha_one', 'all', 20, null, null)$$,
-  'P0001',
-  'unauthenticated',
+  '42501',
+  null,
   'anonymous cannot list profile reviews'
 );
 
 select throws_ok(
   $$select public.get_friends_media_ratings('movie', 'trakt-movie-501', 5, 0)$$,
-  'P0001',
-  'unauthenticated',
+  '42501',
+  null,
   'anonymous cannot read friends ratings'
 );
 
 select throws_ok(
   $$select public.list_following_activity_filtered('all', 20, null, null)$$,
-  'P0001',
-  'unauthenticated',
+  '42501',
+  null,
   'anonymous cannot read filtered feed'
 );
 

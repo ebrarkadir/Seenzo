@@ -76,6 +76,7 @@ select throws_ok(
   $$insert into public.user_blocks (blocker_id, blocked_id)
     values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb')$$,
   '42501',
+  null,
   'direct insert into user_blocks is denied'
 );
 
@@ -84,6 +85,8 @@ select lives_ok(
   'A can block B'
 );
 
+-- Inspect deny-by-default tables as privileged role; client RPCs stay authenticated.
+reset role;
 select results_eq(
   $$select count(*)::int from public.user_blocks
     where blocker_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
@@ -114,6 +117,9 @@ select results_eq(
   array[0],
   'block removes pending requests between A and B'
 );
+
+set local role authenticated;
+set local request.jwt.claim.sub = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
 select throws_ok(
   $$select * from public.request_or_follow('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb')$$,
@@ -175,6 +181,7 @@ select results_eq(
   'accept returns false when requester is blocked'
 );
 
+reset role;
 select results_eq(
   $$select status from public.profile_follow_requests
     where id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'$$,
@@ -189,6 +196,9 @@ select results_eq(
   array[0],
   'accept does not create follow when blocked'
 );
+
+set local role authenticated;
+set local request.jwt.claim.sub = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
 reset role;
 insert into public.social_notifications (recipient_id, actor_id, type)
@@ -221,6 +231,7 @@ select lives_ok(
   'blocker can unblock'
 );
 
+reset role;
 select results_eq(
   $$select count(*)::int from public.user_blocks
     where blocker_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
@@ -238,6 +249,9 @@ select results_eq(
   array[0],
   'unblock does not restore follows'
 );
+
+set local role authenticated;
+set local request.jwt.claim.sub = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
 select lives_ok(
   $$select * from public.request_or_follow('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb')$$,

@@ -20,9 +20,15 @@ set username = excluded.username,
     allow_profile_discovery = true,
     share_activity_with_followers = true;
 
-insert into public.profile_follows (follower_id, following_id)
-values ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-on conflict do nothing;
+-- Follow must predate activity for follow-since access checks.
+insert into public.profile_follows (follower_id, following_id, created_at)
+values (
+  'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+  now() - interval '2 hours'
+)
+on conflict (follower_id, following_id) do update
+set created_at = excluded.created_at;
 
 insert into public.social_activity_events (
   id, actor_id, activity_type, media_type, media_id, rating, created_at
@@ -99,12 +105,14 @@ select throws_ok(
       'nope'
     )$$,
   '42501',
+  null,
   'authenticated cannot execute moderate_hide_social_activity'
 );
 
 select throws_ok(
   $$select public.list_moderation_reports('open', 10, 0)$$,
   '42501',
+  null,
   'authenticated cannot list moderation reports'
 );
 
@@ -116,6 +124,7 @@ select throws_ok(
       'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
     )$$,
   '42501',
+  null,
   'authenticated cannot insert audit rows'
 );
 

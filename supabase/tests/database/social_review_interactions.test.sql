@@ -2,7 +2,7 @@
 -- Not executed in CI by default; run manually against a disposable DB after
 -- applying 20261126180000_social_review_interactions.sql.
 begin;
-select plan(22);
+select plan(23);
 
 insert into auth.users (id, email)
 values
@@ -25,17 +25,21 @@ set username = excluded.username,
     allow_profile_discovery = excluded.allow_profile_discovery,
     share_activity_with_followers = excluded.share_activity_with_followers;
 
--- Alpha publishes a shared rating + review.
+-- Alpha publishes a shared rating + review (fixed id for authenticated RPC args).
 reset role;
-select public.social_upsert_activity_event(
+insert into public.social_activity_events (
+  id, actor_id, activity_type, media_type, media_id, rating, created_at
+)
+values (
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa41',
   'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
   'movie_rated',
   'movie',
-  'trakt-movie-v4-1',
-  null, null, null, 8,
-  '11111111-1111-1111-1111-111111111111'::uuid,
-  true
-);
+  'trakt-movie-41',
+  8,
+  now() - interval '1 hour'
+)
+on conflict (id) do nothing;
 
 insert into public.user_media_reviews (
   user_id, media_type, media_id, review_text, contains_spoilers
@@ -43,7 +47,7 @@ insert into public.user_media_reviews (
 values (
   'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
   'movie',
-  'trakt-movie-v4-1',
+  'trakt-movie-41',
   'Alpha review text',
   false
 )
@@ -65,10 +69,7 @@ set local request.jwt.claim.sub = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 
 select throws_ok(
   $$select public.like_review_activity(
-      (select id from public.social_activity_events
-        where actor_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
-          and media_id = 'trakt-movie-v4-1'
-        limit 1)
+      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa41'::uuid
     )$$,
   'P0001',
   'activity_unavailable',
@@ -76,9 +77,14 @@ select throws_ok(
 );
 
 reset role;
-insert into public.profile_follows (follower_id, following_id)
-values ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-on conflict do nothing;
+insert into public.profile_follows (follower_id, following_id, created_at)
+values (
+  'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+  now() - interval '2 hours'
+)
+on conflict (follower_id, following_id) do update
+set created_at = excluded.created_at;
 
 -- Pending private request alone is not enough (gamma → alpha request, no follow).
 delete from public.profile_follow_requests
@@ -98,10 +104,7 @@ set local request.jwt.claim.sub = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 
 select throws_ok(
   $$select public.like_review_activity(
-      (select id from public.social_activity_events
-        where actor_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
-          and media_id = 'trakt-movie-v4-1'
-        limit 1)
+      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa41'::uuid
     )$$,
   'P0001',
   'activity_unavailable',
@@ -114,24 +117,19 @@ set local request.jwt.claim.sub = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 
 select ok(
   (public.like_review_activity(
-      (select id from public.social_activity_events
-        where actor_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
-          and media_id = 'trakt-movie-v4-1'
-        limit 1)
+      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa41'::uuid
     )->>'liked')::boolean,
   'follower can like'
 );
 
 select ok(
   (public.like_review_activity(
-      (select id from public.social_activity_events
-        where actor_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
-          and media_id = 'trakt-movie-v4-1'
-        limit 1)
+      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa41'::uuid
     )->>'like_count')::integer = 1,
   'duplicate like stays count 1'
 );
 
+reset role;
 select is(
   (select count(*)::integer
      from public.social_notifications
@@ -141,17 +139,17 @@ select is(
   1,
   'like creates one notification'
 );
+set local role authenticated;
+set local request.jwt.claim.sub = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 
 select lives_ok(
   $$select public.unlike_review_activity(
-      (select id from public.social_activity_events
-        where actor_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
-          and media_id = 'trakt-movie-v4-1'
-        limit 1)
+      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa41'::uuid
     )$$,
   'unlike succeeds'
 );
 
+reset role;
 select is(
   (select count(*)::integer
      from public.social_notifications
@@ -161,21 +159,17 @@ select is(
   0,
   'unlike removes like notification'
 );
+set local role authenticated;
+set local request.jwt.claim.sub = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 
 -- Re-like for comment tests
 select public.like_review_activity(
-  (select id from public.social_activity_events
-    where actor_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
-      and media_id = 'trakt-movie-v4-1'
-    limit 1)
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa41'::uuid
 );
 
 select ok(
   (public.create_review_comment(
-      (select id from public.social_activity_events
-        where actor_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
-          and media_id = 'trakt-movie-v4-1'
-        limit 1),
+      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa41'::uuid,
       'Beta comment',
       false,
       null
@@ -183,6 +177,7 @@ select ok(
   'follower can comment'
 );
 
+reset role;
 select is(
   (select count(*)::integer
      from public.social_notifications
@@ -199,10 +194,7 @@ set local request.jwt.claim.sub = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
 select throws_ok(
   $$select public.like_review_activity(
-      (select id from public.social_activity_events
-        where actor_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
-          and media_id = 'trakt-movie-v4-1'
-        limit 1)
+      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa41'::uuid
     )$$,
   'P0001',
   'cannot_like_own',
@@ -229,7 +221,7 @@ select
   now() - interval '10 seconds'
 from public.social_activity_events as a
 where a.actor_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
-  and a.media_id = 'trakt-movie-v4-1'
+  and a.media_id = 'trakt-movie-41'
 limit 1;
 
 insert into public.social_review_comments (
@@ -245,18 +237,26 @@ select
   now() - interval '5 seconds'
 from public.social_activity_events as a
 where a.actor_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
-  and a.media_id = 'trakt-movie-v4-1'
+  and a.media_id = 'trakt-movie-41'
 limit 1;
 
+-- Use gamma (no recent RPC comments) so reply-depth is evaluated before rate limits.
+reset role;
+insert into public.profile_follows (follower_id, following_id, created_at)
+values (
+  'cccccccc-cccc-cccc-cccc-cccccccccccc',
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+  now() - interval '2 hours'
+)
+on conflict (follower_id, following_id) do update
+set created_at = excluded.created_at;
+
 set local role authenticated;
-set local request.jwt.claim.sub = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+set local request.jwt.claim.sub = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 
 select throws_ok(
   $$select public.create_review_comment(
-      (select id from public.social_activity_events
-        where actor_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
-          and media_id = 'trakt-movie-v4-1'
-        limit 1),
+      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa41'::uuid,
       'Too deep',
       false,
       '33333333-3333-3333-3333-333333333333'::uuid
@@ -277,10 +277,7 @@ set local request.jwt.claim.sub = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 
 select throws_ok(
   $$select public.get_review_interaction_summary(
-      (select id from public.social_activity_events
-        where actor_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
-          and media_id = 'trakt-movie-v4-1'
-        limit 1)
+      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa41'::uuid
     )$$,
   'P0001',
   'activity_unavailable',
@@ -289,10 +286,7 @@ select throws_ok(
 
 select throws_ok(
   $$select public.list_review_comments(
-      (select id from public.social_activity_events
-        where actor_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
-          and media_id = 'trakt-movie-v4-1'
-        limit 1)
+      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa41'::uuid
     )$$,
   'P0001',
   'activity_unavailable',
@@ -314,10 +308,7 @@ set local request.jwt.claim.sub = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 
 select throws_ok(
   $$select public.like_review_activity(
-      (select id from public.social_activity_events
-        where actor_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
-          and media_id = 'trakt-movie-v4-1'
-        limit 1)
+      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa41'::uuid
     )$$,
   'P0001',
   'activity_unavailable',
@@ -336,11 +327,20 @@ select throws_ok(
 
 -- Delete authorization: gamma cannot delete beta's comment even after follow.
 reset role;
-insert into public.profile_follows (follower_id, following_id)
+insert into public.profile_follows (follower_id, following_id, created_at)
 values
-  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'),
-  ('cccccccc-cccc-cccc-cccc-cccccccccccc', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-on conflict do nothing;
+  (
+    'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    now() - interval '2 hours'
+  ),
+  (
+    'cccccccc-cccc-cccc-cccc-cccccccccccc',
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    now() - interval '2 hours'
+  )
+on conflict (follower_id, following_id) do update
+set created_at = excluded.created_at;
 
 set local role authenticated;
 set local request.jwt.claim.sub = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
@@ -371,10 +371,7 @@ select throws_ok(
   $$insert into public.social_review_likes (user_id, activity_id)
     values (
       'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
-      (select id from public.social_activity_events
-        where actor_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
-          and media_id = 'trakt-movie-v4-1'
-        limit 1)
+      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa41'::uuid
     )$$,
   '42501',
   null,
@@ -389,23 +386,28 @@ select throws_ok(
       'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
       'review_liked',
       'social_activity',
-      (select id from public.social_activity_events
-        where actor_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
-          and media_id = 'trakt-movie-v4-1'
-        limit 1)
+      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa41'::uuid
     )$$,
   '42501',
   null,
   'clients cannot insert interaction notifications'
 );
 
+select throws_ok(
+  $$select public.social_can_access_review_activity(
+      'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa41'::uuid
+    )$$,
+  '42501',
+  null,
+  'authenticated cannot execute internal access helper'
+);
+
+reset role;
 select ok(
   public.social_can_access_review_activity(
     'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
-    (select id from public.social_activity_events
-      where actor_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
-        and media_id = 'trakt-movie-v4-1'
-      limit 1)
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa41'::uuid
   ),
   'follower with sharing on can access helper'
 );

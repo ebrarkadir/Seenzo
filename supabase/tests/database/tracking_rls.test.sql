@@ -243,7 +243,8 @@ select is_empty(
   'user B cannot read user A episodes'
 );
 select is_empty(
-  $$select * from public.profiles$$,
+  $$select * from public.profiles
+    where user_id = '11111111-1111-1111-1111-111111111111'$$,
   'user B cannot read user A profile'
 );
 select is_empty(

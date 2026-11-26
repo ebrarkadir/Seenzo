@@ -1,5 +1,5 @@
 begin;
-select plan(18);
+select plan(10);
 
 insert into auth.users (id, email)
 values
@@ -92,6 +92,7 @@ select throws_ok(
   'user cannot transfer profile ownership'
 );
 
+reset role;
 select ok(
   exists(select 1 from storage.buckets where id = 'profile-media' and public = false),
   'profile-media bucket exists and is private'

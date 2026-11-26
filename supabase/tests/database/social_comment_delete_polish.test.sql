@@ -24,11 +24,21 @@ set username = excluded.username,
     allow_profile_discovery = excluded.allow_profile_discovery,
     share_activity_with_followers = excluded.share_activity_with_followers;
 
-insert into public.profile_follows (follower_id, following_id)
+-- Follows must predate activity for follow-since access checks.
+insert into public.profile_follows (follower_id, following_id, created_at)
 values
-  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'),
-  ('cccccccc-cccc-cccc-cccc-cccccccccccc', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-on conflict do nothing;
+  (
+    'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    now() - interval '3 hours'
+  ),
+  (
+    'cccccccc-cccc-cccc-cccc-cccccccccccc',
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    now() - interval '3 hours'
+  )
+on conflict (follower_id, following_id) do update
+set created_at = excluded.created_at;
 
 insert into public.social_activity_events (
   id, actor_id, activity_type, media_type, media_id, rating, created_at
@@ -157,6 +167,8 @@ select lives_ok(
   'review owner can delete parent comment'
 );
 
+-- Table privilege checks require a privileged inspector role; RPCs stay authenticated.
+reset role;
 select results_eq(
   $$select count(*)::int from public.social_review_comments
     where id in (
@@ -176,6 +188,9 @@ select results_eq(
   array[0],
   'notifications for deleted parent/reply are cleaned'
 );
+
+set local role authenticated;
+set local request.jwt.claim.sub = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
 select is(
   (public.get_review_interaction_summary('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1')->>'comment_count')::integer,

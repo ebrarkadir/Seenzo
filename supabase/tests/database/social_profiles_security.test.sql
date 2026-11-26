@@ -1,5 +1,5 @@
 begin;
-select plan(18);
+select plan(19);
 
 insert into auth.users (id, email)
 values
@@ -77,7 +77,7 @@ set local request.jwt.claim.sub = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 select throws_ok(
   $$insert into public.profile_follows (follower_id, following_id)
     values ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb')$$,
-  '23514',
+  '42501',
   null,
   'self-follow is rejected'
 );
@@ -124,6 +124,26 @@ select lives_ok(
   'owner can read own aggregate stats even when private'
 );
 
+-- Prove followed user cannot remove someone else's follow while the edge still exists.
+set local request.jwt.claim.sub = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+select is_empty(
+  $$delete from public.profile_follows
+    where follower_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+      and following_id = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
+    returning follower_id$$,
+  'followed user delete attempt returns no rows under RLS'
+);
+
+reset role;
+select results_eq(
+  $$select count(*)::int from public.profile_follows
+    where follower_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+      and following_id = 'cccccccc-cccc-cccc-cccc-cccccccccccc'$$,
+  array[1],
+  'followed user cannot delete someone else follow edge'
+);
+
+set local role authenticated;
 set local request.jwt.claim.sub = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 select lives_ok(
   $$delete from public.profile_follows
@@ -133,15 +153,6 @@ select lives_ok(
 );
 
 set local request.jwt.claim.sub = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
-select throws_ok(
-  $$delete from public.profile_follows
-    where follower_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
-      and following_id = 'cccccccc-cccc-cccc-cccc-cccccccccccc'$$,
-  '42501',
-  null,
-  'followed user cannot delete someone else follow edge'
-);
-
 select throws_ok(
   $$update public.profiles
     set is_public = true, username = null

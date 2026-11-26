@@ -35,9 +35,15 @@ set username = excluded.username,
     allow_profile_discovery = excluded.allow_profile_discovery,
     share_activity_with_followers = excluded.share_activity_with_followers;
 
-insert into public.profile_follows (follower_id, following_id)
-values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb')
-on conflict do nothing;
+-- Follow must predate activity for follow-since access checks.
+insert into public.profile_follows (follower_id, following_id, created_at)
+values (
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+  'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+  now() - interval '2 hours'
+)
+on conflict (follower_id, following_id) do update
+set created_at = excluded.created_at;
 
 insert into public.social_activity_events (
   id, actor_id, activity_type, media_type, media_id, rating, created_at
@@ -197,6 +203,7 @@ select throws_ok(
       'spam'
     )$$,
   '42501',
+  null,
   'direct insert into social_content_reports is denied'
 );
 
