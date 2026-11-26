@@ -386,6 +386,16 @@ function EditProfileForm() {
           ) : null}
         </View>
 
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('social.block.listTitle')}
+          onPress={() => router.push('/users/blocked')}
+          style={({ pressed }) => [styles.blockedLink, pressed && styles.blockedLinkPressed]}
+        >
+          <Text style={styles.blockedLinkText}>{t('social.block.listTitle')}</Text>
+          <Text style={styles.meta}>{t('social.block.listHint')}</Text>
+        </Pressable>
+
         <View style={styles.actions}>
           <PrimaryButton
             label={saving ? t('profile.saving') : t('profile.save')}
@@ -448,6 +458,23 @@ const styles = StyleSheet.create({
   actions: {
     paddingHorizontal: spacing.md,
     gap: spacing.sm,
+  },
+  blockedLink: {
+    marginHorizontal: spacing.md,
+    padding: spacing.md,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    gap: spacing.xs,
+  },
+  blockedLinkPressed: {
+    opacity: 0.85,
+  },
+  blockedLinkText: {
+    ...typography.body,
+    color: colors.primary,
+    fontWeight: '600',
   },
   field: {
     gap: spacing.xs,

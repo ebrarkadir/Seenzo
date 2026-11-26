@@ -170,7 +170,9 @@ function RootStack() {
       <Stack.Screen name="edit-profile" options={{ title: t('profile.editProfile') }} />
       <Stack.Screen name="users/search" options={{ title: t('social.searchTitle') }} />
       <Stack.Screen name="users/connections" options={{ title: t('social.connectionsTitle') }} />
+      <Stack.Screen name="users/blocked" options={{ title: t('social.block.listTitle') }} />
       <Stack.Screen name="social/notifications" options={{ title: t('social.notificationsTitle') }} />
+      <Stack.Screen name="social/discussion" options={{ title: t('social.discussion.title') }} />
       <Stack.Screen name="user/[username]" options={{ title: t('social.profileTitle') }} />
       <Stack.Screen name="personal-ratings" options={{ title: t('personalRatings.title') }} />
       <Stack.Screen name="insights" options={{ title: t('insights.title') }} />

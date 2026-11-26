@@ -35,6 +35,7 @@ function mapRpcError(error, fallback = 'generic') {
   if (/profile_not_public/i.test(message)) return markCoded('profile_not_public', error);
   if (/profile_not_found|request_not_found/i.test(message)) return markCoded('profile_not_found', error);
   if (/not_request_recipient/i.test(message)) return markCoded('not_request_recipient', error);
+  if (/\bblocked\b/i.test(message)) return markCoded('blocked', error);
   return markCoded(fallback, error);
 }
 
@@ -104,7 +105,9 @@ export async function acceptFollowRequest(requestId) {
     p_request_id: requestId,
   });
   if (error) throw mapRpcError(error, 'accept_failed');
-  return Boolean(data);
+  // false = request cancelled due to block (persisted; no exception from RPC)
+  if (data !== true) throw markCoded('blocked');
+  return true;
 }
 
 export async function rejectFollowRequest(requestId) {
