@@ -10,7 +10,9 @@ import {
 import { router, useLocalSearchParams } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 
+import ProfileReviewsSection from '../../components/social/ProfileReviewsSection';
 import PublicProfileView from '../../components/social/PublicProfileView';
+import ReportSheet from '../../components/social/ReportSheet';
 import PrimaryButton from '../../components/ui/PrimaryButton';
 import { useAuth } from '../../auth/AuthContext';
 import { useTracking } from '../../tracking/TrackingContext';
@@ -22,7 +24,12 @@ import {
   followUser,
   unfollowUser,
 } from '../../services/supabase/social';
+import { blockUser } from '../../services/supabase/socialBlocks';
 import { cancelFollowRequest } from '../../services/supabase/socialGraph';
+import {
+  REPORT_TARGET,
+  reportSocialContent,
+} from '../../services/supabase/socialInteractions';
 import { RELATIONSHIP, resolveRelationshipAction } from '../../services/supabase/socialRules';
 import { colors, spacing, typography } from '../../theme';
 
@@ -36,6 +43,9 @@ export default function PublicUserProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [followLoading, setFollowLoading] = useState(false);
+  const [blockLoading, setBlockLoading] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportSubmitting, setReportSubmitting] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [activeUsername, setActiveUsername] = useState(username);
 
@@ -175,6 +185,70 @@ export default function PublicUserProfileScreen() {
     }
   }, [demoMode, followLoading, payload, t]);
 
+  const onBlockUser = useCallback(() => {
+    if (!payload?.profile?.userId || payload.isSelf || blockLoading) {
+      return;
+    }
+    if (demoMode) {
+      Alert.alert(t('social.demoBlockedTitle'), t('social.block.demoBlockedBody'));
+      return;
+    }
+    Alert.alert(t('social.block.confirmTitle'), t('social.block.confirmBody'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('social.block.blockAction'),
+        style: 'destructive',
+        onPress: async () => {
+          setBlockLoading(true);
+          try {
+            await blockUser(payload.profile.userId);
+            Alert.alert(t('social.block.successTitle'), t('social.block.successBody'));
+            router.back();
+          } catch (requestError) {
+            Alert.alert(
+              t('social.block.errorTitle'),
+              t(`social.errors.${requestError.code}`, {
+                defaultValue: t('social.errors.generic'),
+              })
+            );
+          } finally {
+            setBlockLoading(false);
+          }
+        },
+      },
+    ]);
+  }, [blockLoading, demoMode, payload, t]);
+
+  const onReportUser = useCallback(() => {
+    if (!payload?.profile?.userId || payload.isSelf) return;
+    if (demoMode) {
+      Alert.alert(t('social.demoBlockedTitle'), t('social.report.demoBlockedBody'));
+      return;
+    }
+    setReportOpen(true);
+  }, [demoMode, payload, t]);
+
+  const submitProfileReport = useCallback(async (reason) => {
+    if (!payload?.profile?.userId || reportSubmitting) return;
+    setReportSubmitting(true);
+    try {
+      await reportSocialContent({
+        targetType: REPORT_TARGET.PROFILE,
+        targetId: payload.profile.userId,
+        reason,
+      });
+      setReportOpen(false);
+      Alert.alert(t('social.report.thanksTitle'), t('social.report.thanksBody'));
+    } catch (requestError) {
+      Alert.alert(
+        t('social.report.errorTitle'),
+        t(`social.errors.${requestError.code}`, { defaultValue: t('social.errors.generic') })
+      );
+    } finally {
+      setReportSubmitting(false);
+    }
+  }, [payload, reportSubmitting, t]);
+
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -208,6 +282,9 @@ export default function PublicUserProfileScreen() {
         relationshipAction={payload.relationshipAction}
         followLoading={followLoading}
         onToggleFollow={onToggleFollow}
+        blockLoading={blockLoading}
+        onBlockUser={payload.isSelf ? undefined : onBlockUser}
+        onReportUser={payload.isSelf ? undefined : onReportUser}
         onPressFollowers={() => openConnections('followers')}
         onPressFollowing={() => openConnections('following')}
         onPressFavorite={(item) => {
@@ -220,6 +297,23 @@ export default function PublicUserProfileScreen() {
           }
           router.push(`/show/${item.mediaId}`);
         }}
+      />
+      {!demoMode && payload.profile?.username && !payload.limited ? (
+        <ProfileReviewsSection
+          key={`reviews:${session?.user?.id}:${payload.profile.username}`}
+          username={payload.profile.username}
+          isOwner={Boolean(payload.isSelf)}
+          enabled
+        />
+      ) : null}
+      <ReportSheet
+        visible={reportOpen}
+        targetKind="profile"
+        submitting={reportSubmitting}
+        onClose={() => {
+          if (!reportSubmitting) setReportOpen(false);
+        }}
+        onSubmit={submitProfileReport}
       />
     </ScrollView>
   );

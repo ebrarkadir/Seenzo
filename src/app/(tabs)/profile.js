@@ -20,6 +20,7 @@ import ProfileActivitySection from '../../components/profile/ProfileActivitySect
 import ProfileHeader from '../../components/profile/ProfileHeader';
 import FindPeopleRow from '../../components/social/FindPeopleRow';
 import FollowCountsRow from '../../components/social/FollowCountsRow';
+import ProfileReviewsSection from '../../components/social/ProfileReviewsSection';
 import PrimaryButton from '../../components/ui/PrimaryButton';
 import { useProfile } from '../../profile/ProfileContext';
 import { fetchFollowCounts } from '../../services/supabase/social';
@@ -223,6 +224,15 @@ export default function ProfileScreen() {
           onMoveLeft={(position) => moveFavorite('movie', position, position - 1)}
           onMoveRight={(position) => moveFavorite('movie', position, position + 1)}
         />
+
+        {signedIn && profile?.username && !demoMode ? (
+          <ProfileReviewsSection
+            key={`reviews:${userId}:${profile.username}`}
+            username={profile.username}
+            isOwner
+            enabled
+          />
+        ) : null}
 
         {setupUnavailable && signedIn ? (
           <Text style={styles.metaPad}>{t('profile.favoritesUnavailableBody')}</Text>

@@ -39,6 +39,7 @@ const feed = read('src/components/social/FriendsActivityFeed.js');
 expect('feed loads listFollowingActivity', feed.includes('listFollowingActivity'));
 expect('feed handles v3 unavailable', feed.includes('isSocialV3UnavailableError'));
 expect('feed has refresh and pagination', feed.includes('RefreshControl') && feed.includes('onEndReached'));
+expect('feed sets loading on reset', /if \(reset\) \{\s*setLoading\(true\);/.test(feed) || feed.includes('} else if (reset) {\n      setLoading(true)'));
 
 const editProfile = read('src/app/edit-profile.js');
 expect('edit profile has share activity toggle', editProfile.includes('shareActivityWithFollowers') && editProfile.includes('shareActivityHint'));

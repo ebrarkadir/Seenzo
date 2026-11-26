@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import Artwork from '../../services/artwork/Artwork';
 import { colors, radii, spacing, typography } from '../../theme';
+import ReviewInteractionBar from './ReviewInteractionBar';
 import SpoilerReviewBlock from './SpoilerReviewBlock';
 
 const POSTER_WIDTH = 56;
@@ -30,8 +31,17 @@ export default function ActivityFeedCard({
   rating,
   reviewText = null,
   reviewContainsSpoilers = false,
+  interactionsEnabled = false,
+  likedByViewer = false,
+  likeCount = 0,
+  commentCount = 0,
+  demoMode = false,
+  canReport = false,
+  onReport,
   onPressUser,
   onPressMedia,
+  onOpenDiscussion,
+  onInteractionChange,
 }) {
   const name = displayName || username || '';
   const handle = username ? `@${username}` : '';
@@ -101,6 +111,20 @@ export default function ActivityFeedCard({
           resetKey={id}
           reviewText={reviewText}
           containsSpoilers={Boolean(reviewContainsSpoilers)}
+        />
+      ) : null}
+
+      {interactionsEnabled ? (
+        <ReviewInteractionBar
+          activityId={id}
+          likedByViewer={likedByViewer}
+          likeCount={likeCount}
+          commentCount={commentCount}
+          demoMode={demoMode}
+          canReport={canReport}
+          onReport={onReport}
+          onOpenDiscussion={onOpenDiscussion}
+          onInteractionChange={onInteractionChange}
         />
       ) : null}
     </View>

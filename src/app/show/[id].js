@@ -5,6 +5,7 @@ import { useLocalSearchParams, useNavigation } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 
 import { useUndoTimer } from '../../tracking/useUndoTimer';
+import FriendsRatingsSection from '../../components/social/FriendsRatingsSection';
 import PosterThumb from '../../components/ui/PosterThumb';
 import RateChip from '../../components/ui/RateChip';
 import RatingSheet from '../../components/ui/RatingSheet';
@@ -13,6 +14,7 @@ import UndoBar from '../../components/tracking/UndoBar';
 import EpisodeDetailSheet from '../../components/tracking/EpisodeDetailSheet';
 import ShowOverflowMenu from '../../components/tracking/ShowOverflowMenu';
 import CastCrewSection from '../../components/people/CastCrewSection';
+import { useAuth } from '../../auth/AuthContext';
 import { episodeTitle, mediaSynopsis, mediaTitle } from '../../data/labels';
 import { rememberShow, resolveShow, useMediaRevision } from '../../data/mediaLibrary';
 import { hydrateShow } from '../../services/trakt/catalog';
@@ -46,6 +48,7 @@ export default function ShowDetailScreen() {
   const [remoteError, setRemoteError] = useState(null);
   const { t } = useTranslation();
   const navigation = useNavigation();
+  const { session } = useAuth();
   const {
     shows,
     undo,
@@ -59,10 +62,12 @@ export default function ShowDetailScreen() {
     setEpisodeRating,
     showRatings,
     episodeRatings,
+    demoMode,
   } = useTracking();
   useUndoTimer();
   const entry = shows[showId];
   const showRating = entry?.rating ?? showRatings?.[showId] ?? null;
+  const showFriendsRatings = Boolean(session?.user?.id) && !demoMode && Boolean(showId);
   const [expanded, setExpanded] = useState({});
   const [menuOpen, setMenuOpen] = useState(false);
   const [selectedEpisodeId, setSelectedEpisodeId] = useState(null);
@@ -254,6 +259,8 @@ export default function ShowDetailScreen() {
                 accessibilityLabel={t('rating.show')}
                 onPress={() => {
                   setDraft(showRating);
+                  // Hide episode Modal before opening RatingSheet (Android nested-Modal tap bug).
+                  setSelectedEpisodeId(null);
                   setRatingTarget({ type: 'show' });
                 }}
               />
@@ -271,6 +278,12 @@ export default function ShowDetailScreen() {
         </View>
         <Text style={styles.body}>{mediaSynopsis(t, show) || t('trakt.unavailable')}</Text>
         {remoteLoading ? <Text style={styles.meta}>{t('trakt.loading')}</Text> : null}
+        <FriendsRatingsSection
+          key={`friends-ratings:${session?.user?.id}:${showId}`}
+          mediaType="show"
+          mediaId={showId}
+          enabled={showFriendsRatings}
+        />
         {seasons.map((seasonNumber) => {
           const open = Boolean(expanded[seasonNumber]);
           const seasonProgress = getSeasonProgress(show, entry, seasonNumber);
@@ -418,7 +431,7 @@ export default function ShowDetailScreen() {
         onClose={() => setMenuOpen(false)}
       />
       <EpisodeDetailSheet
-        visible={Boolean(selectedEpisode) && ratingTarget?.type !== 'episode'}
+        visible={Boolean(selectedEpisode) && !ratingTarget}
         show={show}
         episode={selectedEpisode}
         watched={selectedEpisode ? watched.has(selectedEpisode.id) : false}

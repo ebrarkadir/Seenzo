@@ -17,6 +17,9 @@ export default function PublicProfileView({
   relationshipAction = RELATIONSHIP.FOLLOW,
   followLoading = false,
   onToggleFollow,
+  blockLoading = false,
+  onBlockUser,
+  onReportUser,
   onPressFollowers,
   onPressFollowing,
   onPressFavorite,
@@ -35,11 +38,45 @@ export default function PublicProfileView({
         {isSelf ? (
           <Text style={styles.selfNote}>{t('social.thisIsYou')}</Text>
         ) : (
-          <RelationshipButton
-            action={relationshipAction}
-            loading={followLoading}
-            onPress={onToggleFollow}
-          />
+          <>
+            <RelationshipButton
+              action={relationshipAction}
+              loading={followLoading}
+              onPress={onToggleFollow}
+            />
+            <View style={styles.secondaryActions}>
+              {onReportUser ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t('social.report.action')}
+                  disabled={blockLoading || followLoading}
+                  onPress={onReportUser}
+                  style={({ pressed }) => [
+                    styles.secondaryAction,
+                    pressed && styles.blockActionPressed,
+                  ]}
+                >
+                  <Text style={styles.secondaryActionText}>{t('social.report.action')}</Text>
+                </Pressable>
+              ) : null}
+              {onBlockUser ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t('social.block.blockAction')}
+                  disabled={blockLoading || followLoading}
+                  onPress={onBlockUser}
+                  style={({ pressed }) => [
+                    styles.secondaryAction,
+                    (pressed || blockLoading) && styles.blockActionPressed,
+                  ]}
+                >
+                  <Text style={styles.blockActionText}>
+                    {blockLoading ? t('common.loading') : t('social.block.blockAction')}
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
+          </>
         )}
       </View>
 
@@ -112,6 +149,29 @@ const styles = StyleSheet.create({
   },
   actions: {
     paddingHorizontal: spacing.md,
+    gap: spacing.sm,
+  },
+  secondaryActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.md,
+    alignItems: 'center',
+  },
+  secondaryAction: {
+    paddingVertical: spacing.xs,
+  },
+  secondaryActionText: {
+    ...typography.caption,
+    color: colors.textMuted,
+    fontWeight: '600',
+  },
+  blockActionPressed: {
+    opacity: 0.7,
+  },
+  blockActionText: {
+    ...typography.caption,
+    color: colors.status.dropped,
+    fontWeight: '600',
   },
   selfNote: {
     ...typography.caption,

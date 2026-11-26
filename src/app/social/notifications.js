@@ -25,6 +25,10 @@ import {
   markSocialNotificationRead,
   rejectFollowRequest,
 } from '../../services/supabase/socialGraph';
+import {
+  isInteractionNotificationType,
+  resolveReviewDiscussionTarget,
+} from '../../services/supabase/socialInteractions';
 import { colors, radii, spacing, typography } from '../../theme';
 
 export default function SocialNotificationsScreen() {
@@ -153,6 +157,22 @@ function NotificationsBody() {
         )));
       } catch {
         // Non-blocking.
+      }
+    }
+    if (isInteractionNotificationType(item?.type) && item?.entityId) {
+      try {
+        const activityId = await resolveReviewDiscussionTarget({
+          entityType: item.entityType,
+          entityId: item.entityId,
+        });
+        router.push(`/social/discussion?activityId=${encodeURIComponent(activityId)}`);
+        return;
+      } catch {
+        Alert.alert(
+          t('social.discussion.goneTitle'),
+          t('social.discussion.goneBody')
+        );
+        return;
       }
     }
     if (item?.actor?.username) {

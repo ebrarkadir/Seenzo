@@ -5,10 +5,12 @@ import { useLocalSearchParams, useNavigation } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 
 import MoviePeopleSections from '../../components/people/MoviePeopleSections';
+import FriendsRatingsSection from '../../components/social/FriendsRatingsSection';
 import ShowOverflowMenu from '../../components/tracking/ShowOverflowMenu';
 import PosterThumb from '../../components/ui/PosterThumb';
 import RateChip from '../../components/ui/RateChip';
 import RatingSheet from '../../components/ui/RatingSheet';
+import { useAuth } from '../../auth/AuthContext';
 import { mediaSynopsis, mediaTitle } from '../../data/labels';
 import { rememberMovie, resolveMovie, useMediaRevision } from '../../data/mediaLibrary';
 import { hydrateMovie } from '../../services/trakt/catalog';
@@ -33,9 +35,11 @@ export default function MovieDetailScreen() {
   const [remoteError, setRemoteError] = useState(null);
   const { t } = useTranslation();
   const navigation = useNavigation();
-  const { movies, saveMovie, toggleMovieWatchlist, setMovieRating, removeMovie } = useTracking();
+  const { session } = useAuth();
+  const { movies, saveMovie, toggleMovieWatchlist, setMovieRating, removeMovie, demoMode } = useTracking();
   const entry = movies[movieId];
   const movieRating = entry?.rating ?? null;
+  const showFriendsRatings = Boolean(session?.user?.id) && !demoMode && Boolean(movieId);
   const [menuOpen, setMenuOpen] = useState(false);
   const [ratingOpen, setRatingOpen] = useState(false);
   const [draft, setDraft] = useState(null);
@@ -214,6 +218,13 @@ export default function MovieDetailScreen() {
 
         <Text style={styles.body}>{mediaSynopsis(t, movie) || t('trakt.unavailable')}</Text>
         {remoteLoading ? <Text style={styles.meta}>{t('trakt.loading')}</Text> : null}
+
+        <FriendsRatingsSection
+          key={`friends-ratings:${session?.user?.id}:${movieId}`}
+          mediaType="movie"
+          mediaId={movieId}
+          enabled={showFriendsRatings}
+        />
 
         <MoviePeopleSections traktMovieId={traktId} watched={watched} />
       </ScrollView>
