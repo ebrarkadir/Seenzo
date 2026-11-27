@@ -2,7 +2,7 @@
 -- Not executed in CI by default; run manually against a disposable DB after
 -- applying 20261126180000_social_review_interactions.sql.
 begin;
-select plan(23);
+select plan(26);
 
 insert into auth.users (id, email)
 values
@@ -201,12 +201,10 @@ select throws_ok(
   'owner cannot like own review'
 );
 
--- Reply depth: create parent as beta, reply as alpha, forbid reply-to-reply.
+-- Reply-to-reply: flat under root; reply_to points at clicked reply; notify that author.
 set local role authenticated;
 set local request.jwt.claim.sub = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 
--- Wait out anti-spam window in real DB; in tests advance clock if available.
--- Use a second distinct author path via reset and direct insert for parent/child depth check.
 reset role;
 insert into public.social_review_comments (
   id, activity_id, author_id, parent_comment_id, comment_text, contains_spoilers, created_at
@@ -216,7 +214,7 @@ select
   a.id,
   'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
   null,
-  'Parent for depth',
+  'Parent for reply-to-reply',
   false,
   now() - interval '10 seconds'
 from public.social_activity_events as a
@@ -240,7 +238,7 @@ where a.actor_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
   and a.media_id = 'trakt-movie-41'
 limit 1;
 
--- Use gamma (no recent RPC comments) so reply-depth is evaluated before rate limits.
+-- Use gamma (no recent RPC comments) so create is not rate-limited.
 reset role;
 insert into public.profile_follows (follower_id, following_id, created_at)
 values (
@@ -254,16 +252,55 @@ set created_at = excluded.created_at;
 set local role authenticated;
 set local request.jwt.claim.sub = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 
-select throws_ok(
+select lives_ok(
   $$select public.create_review_comment(
       'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa41'::uuid,
-      'Too deep',
+      'Reply to a reply',
       false,
       '33333333-3333-3333-3333-333333333333'::uuid
     )$$,
-  'P0001',
-  'reply_depth_exceeded',
-  'cannot reply to a reply'
+  'can reply to a reply'
+);
+
+-- Direct table/notification inspection requires a privileged test role.
+reset role;
+
+select is(
+  (
+    select c.parent_comment_id
+    from public.social_review_comments as c
+    where c.author_id = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
+      and c.comment_text = 'Reply to a reply'
+    order by c.created_at desc
+    limit 1
+  ),
+  '22222222-2222-2222-2222-222222222222'::uuid,
+  'reply-to-reply stores thread root as parent_comment_id'
+);
+
+select is(
+  (
+    select c.reply_to_comment_id
+    from public.social_review_comments as c
+    where c.author_id = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
+      and c.comment_text = 'Reply to a reply'
+    order by c.created_at desc
+    limit 1
+  ),
+  '33333333-3333-3333-3333-333333333333'::uuid,
+  'reply-to-reply stores clicked target as reply_to_comment_id'
+);
+
+select is(
+  (
+    select count(*)::integer
+    from public.social_notifications
+    where recipient_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+      and actor_id = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
+      and type = 'comment_replied'
+  ),
+  1,
+  'reply-to-reply notifies the clicked comment author'
 );
 
 -- Sharing off hides access.

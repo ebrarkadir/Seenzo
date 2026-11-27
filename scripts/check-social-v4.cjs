@@ -30,8 +30,16 @@ expect('migration creates likes table', migration.includes('create table if not 
 expect('migration unique like pk', migration.includes('primary key (user_id, activity_id)'));
 expect('migration creates comments', migration.includes('create table if not exists public.social_review_comments'));
 expect('migration comment length 300', migration.includes('between 1 and 300'));
-expect('migration reply depth guard', migration.includes('reply_depth_exceeded'));
+expect('migration v4 originally guarded reply depth', migration.includes('reply_depth_exceeded'));
 expect('migration parent same activity', migration.includes('invalid_parent'));
+
+const replyMigration = read('supabase/migrations/20261127190000_social_reply_to_reply.sql');
+expect('reply-to-reply migration adds reply_to_comment_id', replyMigration.includes('reply_to_comment_id'));
+expect('reply-to-reply FK uses set null', /on delete set null/i.test(replyMigration));
+expect('reply-to-reply drops list for return signature', replyMigration.includes('drop function if exists public.list_review_comments'));
+expect('reply-to-reply create flattens to root parent', replyMigration.includes('v_parent_id := v_root.id'));
+expect('reply-to-reply create no longer raises reply_depth_exceeded', !replyMigration.includes('reply_depth_exceeded'));
+expect('reply-to-reply notifies clicked author', replyMigration.includes('v_notify_recipient := v_target.author_id'));
 expect('migration like rpc', migration.includes('like_review_activity'));
 expect('migration unlike deletes notif', migration.includes("type = 'review_liked'"));
 expect('migration no self like', migration.includes('cannot_like_own'));
@@ -119,6 +127,19 @@ expect(
   }).containsSpoilers,
   true
 );
+expect(
+  'comment normalizes reply_to fields',
+  interactions.normalizeReviewCommentRow({
+    id: 'c2',
+    comment_text: 'Nested',
+    parent_comment_id: 'root1',
+    reply_to_comment_id: 'reply1',
+    reply_to_author_username: 'sam',
+    author_id: 'u2',
+    author_username: 'lee',
+  }).replyToAuthorUsername,
+  'sam'
+);
 expect('like notif type', interactions.isInteractionNotificationType('review_liked'), true);
 expect('follow notif not interaction', interactions.isInteractionNotificationType('new_follower'), false);
 
@@ -137,9 +158,14 @@ expect('card wires interaction bar', card.includes('ReviewInteractionBar'));
 const discussion = read('src/app/social/discussion.js');
 expect('discussion screen exists', discussion.includes('getReviewInteractionSummary'));
 expect('discussion composer limit', discussion.includes('SOCIAL_COMMENT_MAX_LENGTH'));
-expect('discussion reply one level', discussion.includes('replyTo'));
+expect('discussion reply target state', discussion.includes('replyTo'));
+expect('discussion reply-to-reply passes clicked id', discussion.includes('parentCommentId: target?.id'));
 expect('discussion spoiler toggle', discussion.includes('CommentSpoilerToggle'));
 expect('discussion account key remount', discussion.includes('session.user.id'));
+
+const commentRow = read('src/components/social/ReviewCommentRow.js');
+expect('comment row reply available on indented replies', !/!indented \? \(/.test(commentRow.replace(/\s+/g, ' ')) && commentRow.includes('onReply?.(item)'));
+expect('comment row shows reply-to inline label', commentRow.includes('replyingToInline'));
 expect(
   'discussion delete refreshes summary',
   discussion.includes('deleteReviewComment')
@@ -178,6 +204,12 @@ expect('layout registers discussion route', layout.includes('social/discussion')
 
 const pgtap = read('supabase/tests/database/social_review_interactions.test.sql');
 expect('pgTAP file present', pgtap.includes('social_can_access_review_activity'));
+expect('pgTAP allows reply-to-reply', pgtap.includes('can reply to a reply') && !pgtap.includes("'reply_depth_exceeded'"));
+expect('pgTAP asserts flat parent storage', pgtap.includes('stores thread root as parent_comment_id'));
+
+const pgtapReply = read('supabase/tests/database/social_reply_to_reply.test.sql');
+expect('pgTAP reply-to-reply suite present', pgtapReply.includes('reply_to_comment_id FK uses ON DELETE SET NULL'));
+expect('pgTAP reply-to-reply covers self notify skip', pgtapReply.includes('self reply-to-reply creates no notification'));
 
 const failed = checks.filter((item) => !item.pass);
 for (const item of checks) {

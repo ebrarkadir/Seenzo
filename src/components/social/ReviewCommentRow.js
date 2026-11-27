@@ -17,6 +17,9 @@ export default function ReviewCommentRow({
   const { t } = useTranslation();
   const name = item?.author?.displayName || item?.author?.username || t('social.unknownUser');
   const handle = item?.author?.username ? `@${item.author.username}` : '';
+  const replyToHandle = item?.replyToAuthorUsername
+    ? `@${item.replyToAuthorUsername}`
+    : (item?.replyToAuthorDisplayName || null);
 
   const confirmDelete = () => {
     Alert.alert(
@@ -56,23 +59,26 @@ export default function ReviewCommentRow({
             <Text style={styles.time}>{item.relativeTime}</Text>
           ) : null}
         </View>
+        {replyToHandle ? (
+          <Text style={styles.replyTo} numberOfLines={1}>
+            {t('social.discussion.replyingToInline', { user: replyToHandle })}
+          </Text>
+        ) : null}
         <CommentSpoilerBlock
           resetKey={item?.id}
           text={item?.commentText}
           containsSpoilers={Boolean(item?.containsSpoilers)}
         />
         <View style={styles.actions}>
-          {!indented ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t('social.discussion.replyA11y')}
-              disabled={actionBusy}
-              onPress={() => onReply?.(item)}
-              hitSlop={8}
-            >
-              <Text style={styles.action}>{t('social.discussion.reply')}</Text>
-            </Pressable>
-          ) : null}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('social.discussion.replyA11y')}
+            disabled={actionBusy}
+            onPress={() => onReply?.(item)}
+            hitSlop={8}
+          >
+            <Text style={styles.action}>{t('social.discussion.reply')}</Text>
+          </Pressable>
           {item?.canDelete ? (
             <Pressable
               accessibilityRole="button"
@@ -151,6 +157,10 @@ const styles = StyleSheet.create({
   time: {
     ...typography.label,
     color: colors.textMuted,
+  },
+  replyTo: {
+    ...typography.label,
+    color: colors.primary,
   },
   actions: {
     flexDirection: 'row',

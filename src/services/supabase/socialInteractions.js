@@ -144,11 +144,20 @@ export function normalizeReviewCommentRow(row) {
     avatar_path: row.author_avatar_path ?? row.authorAvatarPath,
     is_public: row.author_is_public ?? row.authorIsPublic,
   });
+  const replyToUsername = row.reply_to_author_username
+    ?? row.replyToAuthorUsername
+    ?? null;
+  const replyToDisplayName = row.reply_to_author_display_name
+    ?? row.replyToAuthorDisplayName
+    ?? null;
   return {
     id,
     activityId: row.activity_id ?? row.activityId ?? null,
     authorId: row.author_id ?? row.authorId ?? null,
     parentCommentId: row.parent_comment_id ?? row.parentCommentId ?? null,
+    replyToCommentId: row.reply_to_comment_id ?? row.replyToCommentId ?? null,
+    replyToAuthorUsername: replyToUsername ? String(replyToUsername) : null,
+    replyToAuthorDisplayName: replyToDisplayName ? String(replyToDisplayName) : null,
     commentText: text,
     containsSpoilers: Boolean(row.contains_spoilers ?? row.containsSpoilers),
     createdAt: row.created_at ?? row.createdAt ?? null,

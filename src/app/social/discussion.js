@@ -291,14 +291,24 @@ function DiscussionBody({ activityId }) {
     if (guardDemo() || sendLock.current || !canSubmitComment(draft) || !activityId) return;
     sendLock.current = true;
     setSending(true);
+    const target = replyTo;
     try {
       const created = await createReviewComment({
         activityId,
         commentText: draft,
         containsSpoilers: spoilers,
-        parentCommentId: replyTo?.id || null,
+        // Clicked target (root or reply); RPC flattens parent_comment_id to thread root.
+        parentCommentId: target?.id || null,
       });
-      setComments((current) => [...current, created]);
+      const withReplyLabel = created.replyToCommentId && target?.id === created.replyToCommentId
+        ? {
+          ...created,
+          replyToAuthorUsername: target.author?.username || created.replyToAuthorUsername || null,
+          replyToAuthorDisplayName:
+            target.author?.displayName || created.replyToAuthorDisplayName || null,
+        }
+        : created;
+      setComments((current) => [...current, withReplyLabel]);
       setSummary((current) => (
         current
           ? { ...current, commentCount: (current.commentCount || 0) + 1 }
@@ -324,9 +334,18 @@ function DiscussionBody({ activityId }) {
     setActionBusy(true);
     try {
       await deleteReviewComment(item.id);
-      setComments((current) => current.filter((row) => (
-        row.id !== item.id && row.parentCommentId !== item.id
-      )));
+      setComments((current) => current
+        .filter((row) => row.id !== item.id && row.parentCommentId !== item.id)
+        .map((row) => (
+          row.replyToCommentId === item.id
+            ? {
+              ...row,
+              replyToCommentId: null,
+              replyToAuthorUsername: null,
+              replyToAuthorDisplayName: null,
+            }
+            : row
+        )));
       setReplyTo((current) => {
         if (!current) return null;
         if (current.id === item.id || current.parentCommentId === item.id) return null;
