@@ -9,7 +9,13 @@ import { startupLog } from '../diagnostics/startup';
 import { parseTraktMovieKey, parseTraktShowKey } from '../services/trakt/normalize';
 import { hydrateMovie, hydrateShow } from '../services/trakt/catalog';
 import { publishSocialRatingEvent } from '../services/supabase/socialActivity';
-import { pullTracking, pushActivityEvents, pushTracking, trackingClient } from '../services/supabase/trackingSync';
+import {
+  pullTracking,
+  pushActivityEvents,
+  pushTracking,
+  pushWatchlistOrder,
+  trackingClient,
+} from '../services/supabase/trackingSync';
 import {
   emptyGuestState,
   isGuestFresh,
@@ -34,10 +40,21 @@ import {
   hasTrackingRecords,
   isCurrentScope,
   learnEpisodeMeta,
+  getWatchlistOrderCleanMeta,
   mergeRemoteAndLocal,
   queueForSync,
   stateFromRemote,
+  watchlistOrderNeedsPush,
 } from './cloudState';
+import {
+  applyMovieWatchlistOrderMove,
+  applyMovieWatchlistReorder,
+  applyShowWatchlistOrderMove,
+  applyShowWatchlistReorder,
+  markWatchlistOrderDirty,
+  reconcileWatchlistOrders,
+  removeWatchlistId,
+} from './watchlistOrder';
 import {
   markNextReleased,
   markSeasonUnwatched,
@@ -60,6 +77,7 @@ import {
   removeTrackedShow,
   showEntry,
 } from './watchlist';
+import { nowWatchlistAddedAt } from './watchlistSort';
 
 const TrackingContext = createContext(null);
 const ACCOUNT_LOAD_TIMEOUT_MS = 15000;
@@ -123,17 +141,7 @@ function rehydrateCatalog(state) {
 }
 
 function emptyState() {
-  return {
-    onboardingComplete: false,
-    demoMode: false,
-    shows: {},
-    movies: {},
-    showRatings: {},
-    episodeRatings: {},
-    episodeMeta: {},
-    keptEpisodes: {},
-    activityEvents: [],
-  };
+  return emptyGuestState();
 }
 
 export function TrackingProvider({ children }) {
@@ -219,7 +227,9 @@ export function TrackingProvider({ children }) {
       const current = stateRef.current;
       const queue = queueForSync(serverRef.current, current, episodeLookup, { allowPush: !current.demoMode });
       const pendingActivity = !current.demoMode ? pendingActivityEvents(current) : [];
-      if (!hasQueueWork(queue) && !pendingActivity.length) {
+      const pendingMovieOrder = !current.demoMode && watchlistOrderNeedsPush(current, 'movie');
+      const pendingShowOrder = !current.demoMode && watchlistOrderNeedsPush(current, 'show');
+      if (!hasQueueWork(queue) && !pendingActivity.length && !pendingMovieOrder && !pendingShowOrder) {
         setSyncStatus('saved');
         return;
       }
@@ -228,6 +238,8 @@ export function TrackingProvider({ children }) {
         && !Object.keys(queue.media).length
         && !Object.keys(queue.episodes).length
         && !pendingActivity.length
+        && !pendingMovieOrder
+        && !pendingShowOrder
       ) {
         setSyncStatus('error');
         return;
@@ -340,6 +352,60 @@ export function TrackingProvider({ children }) {
           }
           // Missing activity table (migration not applied) must not block tracking sync.
         }
+
+        const pushOrderType = async (mediaType) => {
+          const live = stateRef.current;
+          if (!watchlistOrderNeedsPush(live, mediaType)) {
+            return;
+          }
+          const orderKey = mediaType === 'show' ? 'showWatchlistOrder' : 'movieWatchlistOrder';
+          const expected = Number(live.watchlistOrderMeta?.[mediaType]?.revision) || 0;
+          try {
+            const result = await pushWatchlistOrder(
+              supabase,
+              userId,
+              mediaType,
+              live[orderKey] || [],
+              expected
+            );
+            if (!isCurrentScope(scopeRef.current, request)) {
+              return;
+            }
+            setState((prev) => ({
+              ...prev,
+              [orderKey]: result.order,
+              watchlistOrderMeta: getWatchlistOrderCleanMeta(prev.watchlistOrderMeta, mediaType, result.revision),
+            }));
+            serverRef.current = {
+              ...serverRef.current,
+              [orderKey]: result.order,
+              watchlistOrderMeta: getWatchlistOrderCleanMeta(
+                serverRef.current.watchlistOrderMeta,
+                mediaType,
+                result.revision
+              ),
+            };
+          } catch (error) {
+            if (error?.code === 'order_unavailable') {
+              // Migration not applied yet — keep dirty local order; do not fail media sync.
+              return;
+            }
+            if (error?.code === 'stale_revision') {
+              // Keep local dirty order; next successful media flush / retry will push again
+              // after user resolves via retry. Do not silently adopt remote and drop edits.
+              conflicts = [...conflicts, { table: 'watchlist_order', id: mediaType }];
+              return;
+            }
+            throw error;
+          }
+        };
+        if (pendingMovieOrder) {
+          await pushOrderType('movie');
+        }
+        if (pendingShowOrder) {
+          await pushOrderType('show');
+        }
+
         setSyncStatus(conflicts.length || blocked.length ? 'error' : 'saved');
       } catch {
         if (isCurrentScope(scopeRef.current, request)) {
@@ -396,7 +462,12 @@ export function TrackingProvider({ children }) {
           // Do not leave ready=false forever on an unexpected auth mismatch.
           throw new Error('auth');
         }
-        const remote = stateFromRemote(remoteRows.media, remoteRows.episodes, remoteRows.activity);
+        const remote = stateFromRemote(
+          remoteRows.media,
+          remoteRows.episodes,
+          remoteRows.activity,
+          remoteRows.watchlistOrders
+        );
         const merged = mergeRemoteAndLocal(remote, cache, episodeLookup);
         serverRef.current = merged.server;
         stampsRef.current = merged.stamps;
@@ -848,13 +919,60 @@ export function TrackingProvider({ children }) {
 
   const removeMovie = useCallback((movieId) => {
     commit((prev) => {
-      if (!prev.movies[movieId]) {
+      const entry = prev.movies[movieId];
+      if (!entry) {
         return prev;
       }
+      const wasWatchlisted = Boolean(entry.saved && !entry.watched);
       const movies = { ...prev.movies };
       delete movies[movieId];
-      return { ...prev, movies };
+      return reconcileWatchlistOrders({
+        ...prev,
+        movies,
+        movieWatchlistOrder: wasWatchlisted
+          ? removeWatchlistId(prev.movieWatchlistOrder, movieId)
+          : prev.movieWatchlistOrder,
+        watchlistOrderMeta: wasWatchlisted
+          ? markWatchlistOrderDirty(prev.watchlistOrderMeta, 'movie')
+          : prev.watchlistOrderMeta,
+      });
     });
+  }, [commit]);
+
+  const moveMovieWatchlistOrder = useCallback((movieId, toPosition) => {
+    let result = { ok: false, reason: 'missing' };
+    commit((prev) => {
+      result = applyMovieWatchlistOrderMove(prev, movieId, toPosition);
+      return result.state;
+    });
+    return result;
+  }, [commit]);
+
+  const moveShowWatchlistOrder = useCallback((showId, toPosition) => {
+    let result = { ok: false, reason: 'missing' };
+    commit((prev) => {
+      result = applyShowWatchlistOrderMove(prev, showId, toPosition);
+      return result.state;
+    });
+    return result;
+  }, [commit]);
+
+  const reorderMovieWatchlist = useCallback((nextOrder) => {
+    let result = { ok: false, reason: 'membership' };
+    commit((prev) => {
+      result = applyMovieWatchlistReorder(prev, nextOrder);
+      return result.state;
+    });
+    return result;
+  }, [commit]);
+
+  const reorderShowWatchlist = useCallback((nextOrder) => {
+    let result = { ok: false, reason: 'membership' };
+    commit((prev) => {
+      result = applyShowWatchlistReorder(prev, nextOrder);
+      return result.state;
+    });
+    return result;
   }, [commit]);
 
   const setMovieRating = useCallback((movieId, rating) => {
@@ -888,7 +1006,11 @@ export function TrackingProvider({ children }) {
         const keptRating = prev.shows[selection.id]?.rating ?? showRatings[selection.id] ?? null;
         delete showRatings[selection.id];
         if (!selection.throughEpisodeId) {
-          shows[selection.id] = showEntry({ intent: 'plan', rating: keptRating });
+          shows[selection.id] = showEntry({
+            intent: 'plan',
+            rating: keptRating,
+            watchlistAddedAt: nowWatchlistAddedAt(),
+          });
           return;
         }
         shows[selection.id] = showEntry({
@@ -912,6 +1034,8 @@ export function TrackingProvider({ children }) {
           saved: true,
           watched: false,
           rating: existing?.rating ?? null,
+          watchlistAddedAt: existing?.watchlistAddedAt
+            || nowWatchlistAddedAt(),
         };
       });
 
@@ -982,6 +1106,9 @@ export function TrackingProvider({ children }) {
     demoMode: state.demoMode,
     shows: state.shows,
     movies: state.movies,
+    movieWatchlistOrder: state.movieWatchlistOrder,
+    showWatchlistOrder: state.showWatchlistOrder,
+    watchlistOrderMeta: state.watchlistOrderMeta,
     showRatings: state.showRatings,
     episodeRatings: state.episodeRatings,
     episodeMeta: state.episodeMeta,
@@ -1003,6 +1130,10 @@ export function TrackingProvider({ children }) {
     saveMovie,
     removeMovie,
     setMovieRating,
+    moveMovieWatchlistOrder,
+    moveShowWatchlistOrder,
+    reorderMovieWatchlist,
+    reorderShowWatchlist,
     completeOnboarding,
     loadDemo,
     clearLocalData,
@@ -1031,6 +1162,10 @@ export function TrackingProvider({ children }) {
     saveMovie,
     removeMovie,
     setMovieRating,
+    moveMovieWatchlistOrder,
+    moveShowWatchlistOrder,
+    reorderMovieWatchlist,
+    reorderShowWatchlist,
     completeOnboarding,
     loadDemo,
     clearLocalData,

@@ -11,7 +11,7 @@ import PosterThumb from '../../components/ui/PosterThumb';
 import RateChip from '../../components/ui/RateChip';
 import RatingSheet from '../../components/ui/RatingSheet';
 import { useAuth } from '../../auth/AuthContext';
-import { mediaSynopsis, mediaTitle } from '../../data/labels';
+import { mediaGenreLabels, mediaSynopsis, mediaTitle } from '../../data/labels';
 import { rememberMovie, resolveMovie, useMediaRevision } from '../../data/mediaLibrary';
 import { hydrateMovie } from '../../services/trakt/catalog';
 import { parseTraktMovieKey } from '../../services/trakt/normalize';
@@ -105,9 +105,7 @@ export default function MovieDetailScreen() {
   const watched = Boolean(entry?.watched);
   const posterStatus = watched ? 'completed' : saved ? 'plan' : null;
   const communityRating = formatCommunityRating(movie.communityRating);
-  const genreLine = movie.genreKey
-    ? `${movie.year || t('trakt.unavailable')} · ${t(movie.genreKey)}`
-    : [movie.year, movie.genres?.join(', ')].filter(Boolean).join(' · ') || t('trakt.unavailable');
+  const genreLabels = mediaGenreLabels(t, movie);
 
   const overflowOptions = [];
   if (!saved && !watched) {
@@ -158,7 +156,10 @@ export default function MovieDetailScreen() {
           />
           <View style={styles.headerCopy}>
             <Text style={styles.title}>{mediaTitle(t, movie)}</Text>
-            <Text style={styles.meta}>{genreLine}</Text>
+            <Text style={styles.meta}>{movie.year || t('trakt.unavailable')}</Text>
+            {genreLabels.length ? (
+              <Text style={styles.genres}>{genreLabels.join(' · ')}</Text>
+            ) : null}
             {movie.runtime ? (
               <Text style={styles.meta}>{t('common.minutes', { count: movie.runtime })}</Text>
             ) : null}
@@ -339,5 +340,9 @@ const styles = StyleSheet.create({
   meta: {
     ...typography.caption,
     color: colors.textSecondary,
+  },
+  genres: {
+    ...typography.caption,
+    color: colors.textMuted,
   },
 });

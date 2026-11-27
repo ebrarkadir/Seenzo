@@ -161,7 +161,7 @@ expect('tracking marks guest fresh on logout user clear', tracking.includes('gue
 expect('onboarding checks signedOut before onboardingComplete', onboarding.indexOf('if (!signedIn)') < onboarding.indexOf('if (onboardingComplete)'));
 
 const accountStore = loadModules(
-  ['src/tracking/watchlist.js', 'src/tracking/cloudState.js', 'src/tracking/accountStore.js'],
+  ['src/tracking/watchlistOrder.js', 'src/tracking/watchlistSort.js', 'src/tracking/watchlist.js', 'src/tracking/cloudState.js', 'src/tracking/accountStore.js'],
   'emptyGuestState, writeGuestSession, readGuestSession, markGuestFresh, isGuestFresh, GUEST_TRACKING_KEY, accountStorageKey'
 );
 

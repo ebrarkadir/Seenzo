@@ -245,7 +245,11 @@ const showUndo = progress.undoEpisodeChanges(showMarked.entry, {
 });
 expect('undo restores pre-mark-show progress', showUndo.watchedEpisodeIds, []);
 
-const watchlist = loadModule('src/tracking/watchlist.js', [
+const watchlist = loadModules([
+  'src/tracking/watchlistOrder.js',
+  'src/tracking/watchlistSort.js',
+  'src/tracking/watchlist.js',
+], [
   'applyShowWatchlistToggle',
   'applyMovieWatchlistToggle',
   'migrateFavorites',
@@ -261,6 +265,48 @@ const watchlist = loadModule('src/tracking/watchlist.js', [
   'applyMovieRating',
   'applyShowIntent',
 ].join(', '));
+
+const droppedPartial = entry('dropped', ids(harbor, 4));
+expect('dropped partial stays dropped', status.deriveShowStatus(harbor, droppedPartial, TODAY), 'dropped');
+expect(
+  'dropped still has next for resume',
+  status.getNextEpisode(harbor, droppedPartial, TODAY).id,
+  'harbor-lights-s1e5'
+);
+const resumedState = watchlist.applyShowIntent(
+  { shows: { [harbor.id]: droppedPartial }, showRatings: {} },
+  harbor.id,
+  'watching'
+);
+expect('resume sets watching intent', resumedState.shows[harbor.id].intent, 'watching');
+expect(
+  'resume preserves watched episodes',
+  resumedState.shows[harbor.id].watchedEpisodeIds,
+  droppedPartial.watchedEpisodeIds
+);
+expect(
+  'resume next episode unchanged',
+  status.getNextEpisode(harbor, resumedState.shows[harbor.id], TODAY).id,
+  'harbor-lights-s1e5'
+);
+const neverStartedDropped = entry('dropped', []);
+const resumedFresh = watchlist.applyShowIntent(
+  { shows: { [harbor.id]: neverStartedDropped }, showRatings: {} },
+  harbor.id,
+  'watching'
+);
+expect('resume never-started stays empty progress', resumedFresh.shows[harbor.id].watchedEpisodeIds, []);
+expect(
+  'resume never-started uses first next episode',
+  status.getNextEpisode(harbor, resumedFresh.shows[harbor.id], TODAY).id,
+  'harbor-lights-s1e1'
+);
+const resumedAgain = watchlist.applyShowIntent(resumedState, harbor.id, 'watching');
+expect(
+  'resume is idempotent on watched list',
+  resumedAgain.shows[harbor.id].watchedEpisodeIds,
+  droppedPartial.watchedEpisodeIds
+);
 
 const base = {
   shows: {
@@ -281,7 +327,12 @@ expect('favorite show already watching stays watching', migrated.shows['harbor-l
 expect('favorite-only show becomes plan', migrated.shows.afterglow.intent, 'plan');
 expect('favorite-only show has no watched episodes', migrated.shows.afterglow.watchedEpisodeIds, []);
 expect('watched favorite movie stays watched', migrated.movies['golden-hour'], base.movies['golden-hour']);
-expect('favorite-only movie is to watch', migrated.movies['low-orbit'], { saved: true, watched: false, rating: null });
+expect('favorite-only movie is to watch', migrated.movies['low-orbit'], {
+  saved: true,
+  watched: false,
+  rating: null,
+  watchlistAddedAt: null,
+});
 const migratedAgain = watchlist.migrateFavorites({ ...base, ...migrated, favorites: undefined });
 expect('migration does not duplicate a planned show', migratedAgain.shows.afterglow, migrated.shows.afterglow);
 
@@ -399,7 +450,12 @@ const stored = {
 const restored = watchlist.normalizeTracking(JSON.parse(JSON.stringify(stored)));
 expect('restart keeps episode progress without duplicates', restored.shows['trakt-show-3'].watchedEpisodeIds, ['trakt-episode-4']);
 expect('restart keeps the show rating', restored.shows['trakt-show-3'].rating, 7);
-expect('restart keeps the movie record', restored.movies['trakt-movie-9'], { saved: true, watched: true, rating: 8 });
+expect('restart keeps the movie record', restored.movies['trakt-movie-9'], {
+  saved: true,
+  watched: true,
+  rating: 8,
+  watchlistAddedAt: null,
+});
 expect('restart keeps a valid episode rating', restored.episodeRatings['trakt-episode-4'], 6);
 expect('restart drops an invalid episode rating', restored.episodeRatings.bad, undefined);
 expect('favorite-only show is restored once', restored.shows['trakt-show-8'].intent, 'plan');

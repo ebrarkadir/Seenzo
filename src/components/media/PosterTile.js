@@ -16,6 +16,7 @@ export default function PosterTile({
   posterPath,
   title,
   meta,
+  detail = null,
   width,
   height,
   status,
@@ -73,6 +74,11 @@ export default function PosterTile({
             {meta}
           </Text>
         ) : null}
+        {detail ? (
+          <Text style={styles.detail} numberOfLines={1}>
+            {detail}
+          </Text>
+        ) : null}
       </Pressable>
       {onBookmark ? (
         <BookmarkButton active={watchlisted} label={bookmarkLabel} onPress={onBookmark} style={styles.bookmark} />
@@ -111,6 +117,12 @@ const styles = StyleSheet.create({
   meta: {
     ...typography.label,
     color: colors.textSecondary,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  detail: {
+    ...typography.label,
+    color: colors.textMuted,
     fontWeight: '500',
     marginTop: 2,
   },

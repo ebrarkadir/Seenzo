@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { useUndoTimer } from '../../tracking/useUndoTimer';
 import FriendsRatingsSection from '../../components/social/FriendsRatingsSection';
 import PosterThumb from '../../components/ui/PosterThumb';
+import PrimaryButton from '../../components/ui/PrimaryButton';
 import RateChip from '../../components/ui/RateChip';
 import RatingSheet from '../../components/ui/RatingSheet';
 import StatusBadge from '../../components/ui/StatusBadge';
@@ -16,7 +17,7 @@ import EpisodeIdentifier from '../../components/tracking/EpisodeIdentifier';
 import ShowOverflowMenu from '../../components/tracking/ShowOverflowMenu';
 import CastCrewSection from '../../components/people/CastCrewSection';
 import { useAuth } from '../../auth/AuthContext';
-import { episodeTitle, mediaSynopsis, mediaTitle } from '../../data/labels';
+import { episodeTitle, mediaGenreLabels, mediaSynopsis, mediaTitle } from '../../data/labels';
 import { rememberShow, resolveShow, useMediaRevision } from '../../data/mediaLibrary';
 import { hydrateShow } from '../../services/trakt/catalog';
 import { parseTraktShowKey } from '../../services/trakt/normalize';
@@ -165,6 +166,7 @@ export default function ShowDetailScreen() {
   const allReleasedWatched = progress.total > 0 && progress.watched === progress.total;
   const watched = new Set(entry?.watchedEpisodeIds || []);
   const communityRating = formatCommunityRating(show.communityRating);
+  const genreLabels = mediaGenreLabels(t, show);
   const overflowOptions = [];
   if (!entry) {
     overflowOptions.push({
@@ -182,7 +184,7 @@ export default function ShowDetailScreen() {
   if (entry?.intent === 'dropped') {
     overflowOptions.push({
       key: 'resume',
-      label: t('tv.resume'),
+      label: t('tv.resumeWatching'),
       onPress: () => setShowIntent(show.id, 'watching'),
     });
   } else if (entry) {
@@ -214,6 +216,9 @@ export default function ShowDetailScreen() {
           <View style={styles.headerCopy}>
             <Text style={styles.title}>{mediaTitle(t, show)}</Text>
             <Text style={styles.meta}>{show.year || t('trakt.unavailable')}</Text>
+            {genreLabels.length ? (
+              <Text style={styles.genres}>{genreLabels.join(' · ')}</Text>
+            ) : null}
             <Text style={styles.meta}>
               {show.releaseStatus ? t(`tv.release.${show.releaseStatus}`) : t('trakt.unavailable')}
             </Text>
@@ -278,6 +283,13 @@ export default function ShowDetailScreen() {
             </View>
           </View>
         </View>
+        {entry?.intent === 'dropped' ? (
+          <PrimaryButton
+            label={t('tv.resumeWatching')}
+            onPress={() => setShowIntent(show.id, 'watching')}
+            accessibilityLabel={t('tv.resumeWatchingA11y', { title: mediaTitle(t, show) })}
+          />
+        ) : null}
         <Text style={styles.body}>{mediaSynopsis(t, show) || t('trakt.unavailable')}</Text>
         {remoteLoading ? <Text style={styles.meta}>{t('trakt.loading')}</Text> : null}
         <FriendsRatingsSection
@@ -618,6 +630,10 @@ const styles = StyleSheet.create({
   meta: {
     ...typography.caption,
     color: colors.textSecondary,
+  },
+  genres: {
+    ...typography.caption,
+    color: colors.textMuted,
   },
   seasonCard: {
     borderRadius: radii.lg,

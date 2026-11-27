@@ -2,7 +2,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 
-import { mediaTitle } from '../../data/labels';
+import { mediaGenreLine, mediaTitle } from '../../data/labels';
 import { colors, radii, spacing, typography } from '../../theme';
 import { deriveShowStatus } from '../../tracking/status';
 import { useTracking } from '../../tracking/TrackingContext';
@@ -61,12 +61,15 @@ export function MoviePoster({ movie, watched, rating, width, height, onPress, on
     meta = `${movie.year} · ${t('common.ratingValue', { rating })}`;
   }
 
+  const genreLine = mediaGenreLine(t, movie);
+
   return (
     <PosterTile
       uri={movie.poster}
       posterPath={movie.posterPath}
       title={title}
       meta={meta}
+      detail={genreLine}
       width={width}
       height={height}
       watchlisted={watchlisted}

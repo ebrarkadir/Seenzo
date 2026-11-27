@@ -13,6 +13,8 @@ function loadModules(relativePaths, returned) {
 }
 
 const sync = loadModules([
+  'src/tracking/watchlistOrder.js',
+  'src/tracking/watchlistSort.js',
   'src/tracking/watchlist.js',
   'src/tracking/activityEvents.js',
   'src/tracking/cloudState.js',

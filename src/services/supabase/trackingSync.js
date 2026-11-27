@@ -2,7 +2,7 @@ import { activityEventsFromRemoteRows, activityRowFromEvent, pendingActivityEven
 import { classifyChange, remoteEpisodeSignature, remoteMediaSignature } from '../../tracking/cloudState';
 import { getSupabase } from './client';
 
-const MEDIA_COLUMNS = 'media_type, media_id, show_intent, movie_saved, movie_watched, rating, updated_at';
+const MEDIA_COLUMNS = 'media_type, media_id, show_intent, movie_saved, movie_watched, rating, watchlist_added_at, updated_at';
 const EPISODE_COLUMNS = 'show_media_id, episode_id, season_number, episode_number, watched, rating, watched_at, updated_at';
 const ACTIVITY_COLUMNS = 'client_event_id, media_type, media_id, show_media_id, action, source, client_logged_at, server_recorded_at';
 
@@ -42,11 +42,35 @@ async function selectAll(supabase, table, columns, userId) {
   }
 }
 
+export async function pullWatchlistOrders(supabase, userId) {
+  try {
+    const [items, revisions] = await Promise.all([
+      selectAll(
+        supabase,
+        'watchlist_order_items',
+        'media_type, media_id, position',
+        userId
+      ),
+      selectAll(
+        supabase,
+        'watchlist_order_revisions',
+        'media_type, revision',
+        userId
+      ),
+    ]);
+    return { items: items || [], revisions: revisions || [], available: true };
+  } catch {
+    // Table may not exist until the watchlist order migration is applied.
+    return { items: [], revisions: [], available: false };
+  }
+}
+
 export async function pullTracking(supabase) {
   const userId = await currentUserId(supabase);
-  const [media, episodes] = await Promise.all([
+  const [media, episodes, orders] = await Promise.all([
     selectAll(supabase, 'media_entries', MEDIA_COLUMNS, userId),
     selectAll(supabase, 'episode_entries', EPISODE_COLUMNS, userId),
+    pullWatchlistOrders(supabase, userId),
   ]);
   let activity = [];
   try {
@@ -61,7 +85,45 @@ export async function pullTracking(supabase) {
     episodes,
     activity,
     activityEvents: activityEventsFromRemoteRows(activity),
+    watchlistOrders: orders,
   };
+}
+
+export async function pushWatchlistOrder(supabase, expectedUserId, mediaType, orderedIds, expectedRevision) {
+  const userId = await currentUserId(supabase);
+  if (userId !== expectedUserId) {
+    const failure = new Error('auth');
+    failure.code = 'auth';
+    throw failure;
+  }
+  const type = mediaType === 'show' ? 'show' : 'movie';
+  const { data, error } = await supabase.rpc('set_watchlist_order', {
+    p_media_type: type,
+    p_ordered_ids: orderedIds || [],
+    p_expected_revision: expectedRevision == null ? null : Number(expectedRevision),
+  });
+  if (error) {
+    const message = `${error.message || ''} ${error.details || ''}`;
+    if (/stale_revision/i.test(message)) {
+      const failure = new Error('stale_revision');
+      failure.code = 'stale_revision';
+      throw failure;
+    }
+    if (error.code === 'PGRST202' || /set_watchlist_order|Could not find the function/i.test(message)) {
+      const failure = new Error('order_unavailable');
+      failure.code = 'order_unavailable';
+      throw failure;
+    }
+    throw error;
+  }
+  const rows = Array.isArray(data) ? data : [];
+  const revision = rows.length ? Number(rows[0].revision) || 0 : Number(expectedRevision || 0) + 1;
+  const order = rows
+    .slice()
+    .sort((left, right) => Number(left.item_position ?? left.position) - Number(right.item_position ?? right.position))
+    .map((row) => row.media_id)
+    .filter(Boolean);
+  return { userId, mediaType: type, revision, order };
 }
 
 async function rowsFor(supabase, table, column, ids, userId, columns) {

@@ -24,6 +24,8 @@ function expect(name, actual, expected = true) {
 
 const api = loadModules(
   [
+    'src/tracking/watchlistOrder.js',
+    'src/tracking/watchlistSort.js',
     'src/tracking/watchlist.js',
     'src/tracking/status.js',
     'src/tracking/personalRatings.js',

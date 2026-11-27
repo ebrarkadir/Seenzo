@@ -1,3 +1,6 @@
+import { appendWatchlistId, emptyWatchlistOrderMeta, markWatchlistOrderDirty, reconcileWatchlistOrders, removeWatchlistId } from './watchlistOrder';
+import { normalizeWatchlistAddedAt, nowWatchlistAddedAt } from './watchlistSort';
+
 export function clampRating(rating) {
   if (rating == null || rating === '') {
     return null;
@@ -10,19 +13,30 @@ export function clampRating(rating) {
 }
 
 export function showEntry(partial = {}) {
+  const intent = partial.intent || 'plan';
+  const onPlan = intent === 'plan';
   return {
-    intent: partial.intent || 'plan',
+    intent,
     watchedEpisodeIds: Array.isArray(partial.watchedEpisodeIds) ? partial.watchedEpisodeIds : [],
     rating: partial.rating ?? null,
+    watchlistAddedAt: onPlan ? normalizeWatchlistAddedAt(partial.watchlistAddedAt) : null,
   };
 }
 
 function movieEntry(partial = {}) {
-  return {
+  const next = {
     saved: true,
     watched: false,
     rating: null,
+    watchlistAddedAt: null,
     ...partial,
+  };
+  const onWatchlist = Boolean(next.saved) && !Boolean(next.watched);
+  return {
+    saved: Boolean(next.saved),
+    watched: Boolean(next.watched),
+    rating: next.rating ?? null,
+    watchlistAddedAt: onWatchlist ? normalizeWatchlistAddedAt(next.watchlistAddedAt) : null,
   };
 }
 
@@ -53,7 +67,18 @@ export function removeTrackedShow(prev, showId) {
   if (entry.rating != null) {
     showRatings[showId] = entry.rating;
   }
-  return { ...prev, shows, showRatings };
+  const wasPlan = entry.intent === 'plan';
+  return reconcileWatchlistOrders({
+    ...prev,
+    shows,
+    showRatings,
+    showWatchlistOrder: wasPlan
+      ? removeWatchlistId(prev.showWatchlistOrder, showId)
+      : prev.showWatchlistOrder,
+    watchlistOrderMeta: wasPlan
+      ? markWatchlistOrderDirty(prev.watchlistOrderMeta, 'show')
+      : prev.watchlistOrderMeta,
+  });
 }
 
 export function applyShowWatchlistToggle(prev, showId) {
@@ -67,14 +92,19 @@ export function applyShowWatchlistToggle(prev, showId) {
   const carried = prev.showRatings?.[showId] ?? null;
   const showRatings = { ...(prev.showRatings || {}) };
   delete showRatings[showId];
-  return {
+  return reconcileWatchlistOrders({
     ...prev,
     showRatings,
     shows: {
       ...prev.shows,
-      [showId]: showEntry({ rating: carried }),
+      [showId]: showEntry({
+        rating: carried,
+        watchlistAddedAt: nowWatchlistAddedAt(),
+      }),
     },
-  };
+    showWatchlistOrder: appendWatchlistId(prev.showWatchlistOrder, showId),
+    watchlistOrderMeta: markWatchlistOrderDirty(prev.watchlistOrderMeta, 'show'),
+  });
 }
 
 export function applyMovieWatchlistToggle(prev, movieId) {
@@ -86,17 +116,24 @@ export function applyMovieWatchlistToggle(prev, movieId) {
     if (current.rating == null) {
       const movies = { ...prev.movies };
       delete movies[movieId];
-      return { ...prev, movies };
+      return reconcileWatchlistOrders({
+        ...prev,
+        movies,
+        movieWatchlistOrder: removeWatchlistId(prev.movieWatchlistOrder, movieId),
+        watchlistOrderMeta: markWatchlistOrderDirty(prev.watchlistOrderMeta, 'movie'),
+      });
     }
-    return {
+    return reconcileWatchlistOrders({
       ...prev,
       movies: {
         ...prev.movies,
-        [movieId]: movieEntry({ ...current, saved: false, watched: false }),
+        [movieId]: movieEntry({ ...current, saved: false, watched: false, watchlistAddedAt: null }),
       },
-    };
+      movieWatchlistOrder: removeWatchlistId(prev.movieWatchlistOrder, movieId),
+      watchlistOrderMeta: markWatchlistOrderDirty(prev.watchlistOrderMeta, 'movie'),
+    });
   }
-  return {
+  return reconcileWatchlistOrders({
     ...prev,
     movies: {
       ...prev.movies,
@@ -104,9 +141,12 @@ export function applyMovieWatchlistToggle(prev, movieId) {
         saved: true,
         watched: false,
         rating: current?.rating ?? null,
+        watchlistAddedAt: nowWatchlistAddedAt(),
       }),
     },
-  };
+    movieWatchlistOrder: appendWatchlistId(prev.movieWatchlistOrder, movieId),
+    watchlistOrderMeta: markWatchlistOrderDirty(prev.watchlistOrderMeta, 'movie'),
+  });
 }
 
 export function applyShowIntent(prev, showId, intent) {
@@ -114,7 +154,22 @@ export function applyShowIntent(prev, showId, intent) {
   const carried = existing?.rating ?? prev.showRatings?.[showId] ?? null;
   const showRatings = { ...(prev.showRatings || {}) };
   delete showRatings[showId];
-  return {
+  const wasPlan = existing?.intent === 'plan';
+  const willPlan = intent === 'plan';
+  let showWatchlistOrder = prev.showWatchlistOrder;
+  let watchlistOrderMeta = prev.watchlistOrderMeta;
+  let watchlistAddedAt = null;
+  if (wasPlan && !willPlan) {
+    showWatchlistOrder = removeWatchlistId(prev.showWatchlistOrder, showId);
+    watchlistOrderMeta = markWatchlistOrderDirty(prev.watchlistOrderMeta, 'show');
+  } else if (!wasPlan && willPlan) {
+    showWatchlistOrder = appendWatchlistId(prev.showWatchlistOrder, showId);
+    watchlistOrderMeta = markWatchlistOrderDirty(prev.watchlistOrderMeta, 'show');
+    watchlistAddedAt = nowWatchlistAddedAt();
+  } else if (willPlan) {
+    watchlistAddedAt = normalizeWatchlistAddedAt(existing?.watchlistAddedAt);
+  }
+  return reconcileWatchlistOrders({
     ...prev,
     showRatings,
     shows: {
@@ -123,9 +178,12 @@ export function applyShowIntent(prev, showId, intent) {
         intent,
         watchedEpisodeIds: existing?.watchedEpisodeIds || [],
         rating: existing?.rating ?? carried,
+        watchlistAddedAt,
       }),
     },
-  };
+    showWatchlistOrder,
+    watchlistOrderMeta,
+  });
 }
 
 export function applyMovieChanges(prev, movieId, changes) {
@@ -134,10 +192,28 @@ export function applyMovieChanges(prev, movieId, changes) {
     saved: true,
     watched: false,
     rating: null,
+    watchlistAddedAt: null,
     ...current,
     ...changes,
   };
-  return {
+  const wasWatchlisted = Boolean(current?.saved && !current?.watched);
+  const willWatchlisted = Boolean(next.saved) && !Boolean(next.watched);
+  let movieWatchlistOrder = prev.movieWatchlistOrder;
+  let watchlistOrderMeta = prev.watchlistOrderMeta;
+  let watchlistAddedAt = null;
+  if (wasWatchlisted && !willWatchlisted) {
+    movieWatchlistOrder = removeWatchlistId(prev.movieWatchlistOrder, movieId);
+    watchlistOrderMeta = markWatchlistOrderDirty(prev.watchlistOrderMeta, 'movie');
+  } else if (!wasWatchlisted && willWatchlisted) {
+    movieWatchlistOrder = appendWatchlistId(prev.movieWatchlistOrder, movieId);
+    watchlistOrderMeta = markWatchlistOrderDirty(prev.watchlistOrderMeta, 'movie');
+    watchlistAddedAt = nowWatchlistAddedAt();
+  } else if (willWatchlisted) {
+    watchlistAddedAt = normalizeWatchlistAddedAt(
+      changes.watchlistAddedAt !== undefined ? changes.watchlistAddedAt : current?.watchlistAddedAt,
+    );
+  }
+  return reconcileWatchlistOrders({
     ...prev,
     movies: {
       ...prev.movies,
@@ -145,9 +221,12 @@ export function applyMovieChanges(prev, movieId, changes) {
         saved: Boolean(next.saved),
         watched: Boolean(next.watched),
         rating: clampRating(next.rating),
+        watchlistAddedAt,
       },
     },
-  };
+    movieWatchlistOrder,
+    watchlistOrderMeta,
+  });
 }
 
 export function applyShowRating(prev, showId, rating) {
@@ -247,7 +326,7 @@ function uniqueIds(ids) {
 }
 
 export function normalizeTracking(raw) {
-  const empty = {
+  const empty = reconcileWatchlistOrders({
     onboardingComplete: false,
     demoMode: false,
     shows: {},
@@ -257,7 +336,10 @@ export function normalizeTracking(raw) {
     episodeMeta: {},
     keptEpisodes: {},
     activityEvents: [],
-  };
+    movieWatchlistOrder: [],
+    showWatchlistOrder: [],
+    watchlistOrderMeta: emptyWatchlistOrderMeta(),
+  });
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return empty;
   }
@@ -278,10 +360,12 @@ export function normalizeTracking(raw) {
     if (intent !== 'plan' && intent !== 'watching' && intent !== 'dropped') {
       intent = watchedEpisodeIds.length ? 'watching' : 'plan';
     }
+    const onPlan = intent === 'plan';
     shows[id] = {
       intent,
       watchedEpisodeIds,
       rating: clampRating(entry.rating),
+      watchlistAddedAt: onPlan ? normalizeWatchlistAddedAt(entry.watchlistAddedAt) : null,
     };
   });
   const movies = {};
@@ -295,9 +379,18 @@ export function normalizeTracking(raw) {
     if (!saved && !watched && rating == null) {
       return;
     }
-    movies[id] = { saved, watched, rating };
+    const onWatchlist = saved && !watched;
+    movies[id] = {
+      saved,
+      watched,
+      rating,
+      watchlistAddedAt: onWatchlist ? normalizeWatchlistAddedAt(entry.watchlistAddedAt) : null,
+    };
   });
-  return {
+  const metaRaw = raw.watchlistOrderMeta && typeof raw.watchlistOrderMeta === 'object'
+    ? raw.watchlistOrderMeta
+    : {};
+  return reconcileWatchlistOrders({
     onboardingComplete: Boolean(raw.onboardingComplete),
     demoMode: Boolean(raw.demoMode),
     shows,
@@ -307,7 +400,19 @@ export function normalizeTracking(raw) {
     episodeMeta: episodeMetaMap(raw.episodeMeta),
     keptEpisodes: keptEpisodeMap(raw.keptEpisodes),
     activityEvents: normalizeActivityEventList(raw.activityEvents),
-  };
+    movieWatchlistOrder: Array.isArray(raw.movieWatchlistOrder) ? raw.movieWatchlistOrder : [],
+    showWatchlistOrder: Array.isArray(raw.showWatchlistOrder) ? raw.showWatchlistOrder : [],
+    watchlistOrderMeta: {
+      movie: {
+        revision: Number(metaRaw.movie?.revision) || 0,
+        dirty: Boolean(metaRaw.movie?.dirty),
+      },
+      show: {
+        revision: Number(metaRaw.show?.revision) || 0,
+        dirty: Boolean(metaRaw.show?.dirty),
+      },
+    },
+  });
 }
 
 function normalizeActivityEventList(value) {

@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import PosterThumb from '../ui/PosterThumb';
 import PrimaryButton from '../ui/PrimaryButton';
 import StatusBadge from '../ui/StatusBadge';
-import { episodeTitle, mediaTitle } from '../../data/labels';
+import { episodeTitle, mediaGenreLine, mediaTitle } from '../../data/labels';
 import { colors, radii, spacing, typography } from '../../theme';
 import {
   deriveShowStatus,
@@ -41,13 +41,17 @@ export default function ShowCard({
 }) {
   const { t } = useTranslation();
   const title = mediaTitle(t, show);
+  const genreLine = mediaGenreLine(t, show);
   const status = deriveShowStatus(show, entry);
   const next = getNextEpisode(show, entry);
   const progress = getProgress(show, entry);
   const last = lastWatchedEpisode(show, entry);
   const color = colors.status[status] || colors.textMuted;
   const nextReleased = Boolean(next && isReleased(next));
-  const useEpisodeActions = Boolean(onOpenEpisode && next && nextReleased);
+  // Active Up Next actions only for watching — never treat dropped as active continue.
+  const useEpisodeActions = Boolean(
+    status === 'watching' && onOpenEpisode && next && nextReleased
+  );
 
   let fallbackMeta = t(`tv.status.${status}`);
   if (status === 'dropped' && last) {
@@ -96,6 +100,9 @@ export default function ShowCard({
           <Text style={styles.title} numberOfLines={2}>
             {title}
           </Text>
+          {genreLine ? (
+            <Text style={styles.genres} numberOfLines={1}>{genreLine}</Text>
+          ) : null}
           {useEpisodeActions ? (
             <Text style={styles.meta} numberOfLines={1}>{progressLine}</Text>
           ) : (
@@ -189,6 +196,11 @@ const styles = StyleSheet.create({
     ...typography.body,
     fontWeight: '700',
     color: colors.text,
+  },
+  genres: {
+    ...typography.label,
+    color: colors.textMuted,
+    fontWeight: '500',
   },
   meta: {
     ...typography.caption,

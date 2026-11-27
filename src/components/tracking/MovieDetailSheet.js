@@ -8,7 +8,7 @@ import MoviePeopleSections from '../people/MoviePeopleSections';
 import PosterThumb from '../ui/PosterThumb';
 import RateChip from '../ui/RateChip';
 import RatingSheet from '../ui/RatingSheet';
-import { mediaSynopsis, mediaTitle } from '../../data/labels';
+import { mediaGenreLabels, mediaSynopsis, mediaTitle } from '../../data/labels';
 import { resolveMovie, useMediaRevision } from '../../data/mediaLibrary';
 import { parseTraktMovieKey } from '../../services/trakt/normalize';
 import { colors, radii, spacing, typography } from '../../theme';
@@ -37,9 +37,7 @@ export default function MovieDetailSheet({
   const watched = Boolean(entry?.watched);
   const movieRating = entry?.rating ?? null;
   const traktId = movie ? (parseTraktMovieKey(movie.id) || movie.traktId || null) : null;
-  const genreLine = movie?.genreKey
-    ? `${movie.year || t('trakt.unavailable')} · ${t(movie.genreKey)}`
-    : [movie?.year, movie?.genres?.join(', ')].filter(Boolean).join(' · ') || t('trakt.unavailable');
+  const genreLabels = movie ? mediaGenreLabels(t, movie) : [];
 
   if (!movieId) {
     return null;
@@ -85,7 +83,10 @@ export default function MovieDetailSheet({
                     />
                     <View style={styles.headerCopy}>
                       <Text style={styles.title}>{mediaTitle(t, movie)}</Text>
-                      <Text style={styles.meta}>{genreLine}</Text>
+                      <Text style={styles.meta}>{movie.year || t('trakt.unavailable')}</Text>
+                      {genreLabels.length ? (
+                        <Text style={styles.genres}>{genreLabels.join(' · ')}</Text>
+                      ) : null}
                       <Text style={styles.meta}>
                         {watched ? t('movies.watched') : entry?.saved ? t('movies.toWatch') : t('movies.notSaved')}
                       </Text>
@@ -227,5 +228,9 @@ const styles = StyleSheet.create({
   meta: {
     ...typography.caption,
     color: colors.textSecondary,
+  },
+  genres: {
+    ...typography.caption,
+    color: colors.textMuted,
   },
 });

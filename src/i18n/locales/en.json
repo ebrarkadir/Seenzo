@@ -836,7 +836,9 @@
     "markUnwatched": "Mark unwatched",
     "addToWatchlist": "Add to Watchlist",
     "removeFromWatchlist": "Remove from Watchlist",
-    "resume": "Resume",
+    "resumeWatching": "Resume watching",
+    "resumeWatchingA11y": "Resume watching {{title}}",
+    "droppedSection": "Dropped",
     "undo": "Undo",
     "undoMessage": "Marked {{title}} watched",
     "undoSeasonWatched": "Marked {{label}} watched",
@@ -918,7 +920,10 @@
     "notFound": "This movie is not in the catalog.",
     "moreActions": "More movie actions",
     "removeTitle": "Remove this movie?",
-    "removeMessage": "This removes the movie from your list. Your personal rating is removed with it."
+    "removeMessage": "This removes the movie from your list. Your personal rating is removed with it.",
+    "forYouNeedRatings": "Rate a few watched movies to personalize your watchlist.",
+    "forYouNeedHistory": "Watch or rate a few more movies to personalize this list.",
+    "forYouBasedOnHistory": "Ranked from your watching history. Ratings make this stronger."
   },
   "watchlist": {
     "add": "Add {{title}} to Watchlist",
@@ -930,7 +935,30 @@
     "emptyShowsTitle": "No shows planned",
     "emptyShowsBody": "Series you want to start will show up here.",
     "emptyMoviesTitle": "No movies planned",
-    "emptyMoviesBody": "Movies you want to watch will show up here."
+    "emptyMoviesBody": "Movies you want to watch will show up here.",
+    "main": {
+      "myList": "My List",
+      "forYou": "For You"
+    },
+    "sorts": {
+      "myOrder": "My Order",
+      "oldestAdded": "Oldest Added",
+      "newestAdded": "Newest Added",
+      "highestRated": "Highest Rated",
+      "lowestRated": "Lowest Rated",
+      "titleAsc": "Title A–Z",
+      "titleDesc": "Title Z–A"
+    },
+    "sortA11y": "Sort by {{sort}}",
+    "searchPlaceholder": "Search your list",
+    "searchEmpty": "No matches",
+    "searchEmptyBody": "Try another title in your watchlist.",
+    "invalidPosition": "Enter a whole number from 1 to the list length.",
+    "positionA11y": "Position for {{title}}, currently {{position}}",
+    "dragHandleA11y": "Drag to reorder {{title}}",
+    "forYouNeedRatings": "Rate a few shows to personalize this list.",
+    "forYouNeedHistory": "Watch or rate a few more shows to personalize this list.",
+    "forYouBasedOnHistory": "Ranked from your watching history. Ratings make this stronger."
   },
   "discover": {
     "search": "Search the catalog",
@@ -943,7 +971,19 @@
     "addShow": "Add show",
     "addMovie": "Add movie",
     "inLibrary": "In your list",
-    "open": "Open"
+    "open": "Open",
+    "recommendedMovies": "Recommended Movies For You",
+    "recommendedShows": "Recommended Shows For You",
+    "rateMoviesToUnlock": "Rate a few watched movies to unlock personalized movie recommendations.",
+    "rateShowsToUnlock": "Rate a few shows to unlock personalized show recommendations.",
+    "rateOrWatchMoreToUnlock": "Rate more titles or keep watching to improve your recommendations.",
+    "basedOnWatchingHistory": "Based on your watching history",
+    "basedOnRatings": "Based on your ratings",
+    "noRecommendations": "No matching titles in the current catalog pool.",
+    "becauseYouLike": "Because you like {{genre}}",
+    "becauseYouEnjoyCombo": "Because you enjoy {{combo}}",
+    "trendingNow": "Trending now",
+    "seeAll": "See All"
   },
   "upcoming": {
     "title": "Upcoming",
@@ -968,12 +1008,30 @@
   },
   "catalog": {
     "genres": {
+      "action": "Action",
+      "adventure": "Adventure",
+      "animation": "Animation",
+      "anime": "Anime",
+      "comedy": "Comedy",
+      "crime": "Crime",
+      "documentary": "Documentary",
       "drama": "Drama",
-      "scienceFiction": "Science fiction",
-      "thriller": "Thriller",
-      "romance": "Romance",
+      "family": "Family",
+      "fantasy": "Fantasy",
+      "history": "History",
+      "holiday": "Holiday",
+      "horror": "Horror",
+      "music": "Music",
+      "musical": "Musical",
       "mystery": "Mystery",
-      "adventure": "Adventure"
+      "romance": "Romance",
+      "scienceFiction": "Sci-Fi",
+      "short": "Short",
+      "superhero": "Superhero",
+      "suspense": "Suspense",
+      "thriller": "Thriller",
+      "war": "War",
+      "western": "Western"
     },
     "shows": {
       "harborLights": "Harbor Lights",

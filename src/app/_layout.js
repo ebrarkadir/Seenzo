@@ -3,6 +3,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { I18nextProvider, useTranslation } from 'react-i18next';
 
 import i18n from '../i18n';
@@ -159,6 +160,7 @@ function RootStack() {
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="profile" options={{ headerShown: false }} />
       <Stack.Screen name="upcoming" options={{ title: t('upcoming.title') }} />
+      <Stack.Screen name="discover/recommendations" options={{ title: t('discover.recommendedMovies') }} />
       <Stack.Screen name="archive/shows" options={{ title: t('archive.showsTitle') }} />
       <Stack.Screen name="archive/movies" options={{ title: t('archive.moviesTitle') }} />
       <Stack.Screen name="trakt-test" options={{ title: t('trakt.title') }} />
@@ -224,17 +226,19 @@ const styles = StyleSheet.create({
 
 export default function RootLayout() {
   return (
-    <I18nextProvider i18n={i18n}>
-      <AuthProvider>
-        <TrackingProvider>
-          <ProfileProvider>
-            <ReviewsProvider>
-              <StatusBar style="light" />
-              <RootStack />
-            </ReviewsProvider>
-          </ProfileProvider>
-        </TrackingProvider>
-      </AuthProvider>
-    </I18nextProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <I18nextProvider i18n={i18n}>
+        <AuthProvider>
+          <TrackingProvider>
+            <ProfileProvider>
+              <ReviewsProvider>
+                <StatusBar style="light" />
+                <RootStack />
+              </ReviewsProvider>
+            </ProfileProvider>
+          </TrackingProvider>
+        </AuthProvider>
+      </I18nextProvider>
+    </GestureHandlerRootView>
   );
 }

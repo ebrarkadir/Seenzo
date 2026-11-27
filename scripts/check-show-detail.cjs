@@ -40,6 +40,12 @@ expect('episode sheet uses EpisodeIdentifier pill', episodeSheet.includes('<Epis
 expect('show card uses pill episode identifier', showCard.includes('size="pill"') || showCard.includes("size='pill'"));
 expect('show card next label row has heading and pill', showCard.includes('tv.nextEpisodeHeading') && showCard.includes('styles.nextLabelRow'));
 expect('show card no longer inlines nextEpisodeLabel with code', !showCard.includes('tv.nextEpisodeLabel'));
+expect('show card episode actions require watching status', showCard.includes("status === 'watching'") && showCard.includes('useEpisodeActions'));
+expect('show card has no last watched / continue clutter', !showCard.includes('tv.lastWatchedHeading') && !showCard.includes('tv.continueWatching') && !showCard.includes('getContinueWatchingInfo'));
+expect('show card keeps mark watched action', showCard.includes("t('tv.markWatched')"));
+expect('tv tab has dropped section under watching', tvTab.includes('tv.droppedSection') && tvTab.includes("intent === 'dropped'"));
+expect('tv tab resume uses setShowIntent watching', tvTab.includes("setShowIntent(show.id, 'watching')") && tvTab.includes('tv.resumeWatching'));
+expect('show detail resume watching primary action', showSource.includes('tv.resumeWatching') && showSource.includes("setShowIntent(show.id, 'watching')"));
 expect('unwatched check marks then opens', showSource.includes('toggleEpisode(show.id, episode.id)') && showSource.includes('openEpisode()'));
 expect('watched check opens without toggle when already watched', showSource.includes('if (!isWatched)') && showSource.includes('toggleEpisode(show.id, episode.id)'));
 expect('episode rating requires watched in save handler', showSource.includes('if (!watched.has(ratingTarget.id))'));

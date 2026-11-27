@@ -1,5 +1,7 @@
 import { activityEventsFromRemoteRows, mergeActivityEvents } from './activityEvents';
 import { normalizeTracking } from './watchlist';
+import { normalizeWatchlistAddedAt } from './watchlistSort';
+import { markWatchlistOrderClean, orderIdsEqual, reconcileWatchlistOrders, uniqueOrderIds } from './watchlistOrder';
 
 const SHOW_ID = /^trakt-show-[0-9]+$/;
 const MOVIE_ID = /^trakt-movie-[0-9]+$/;
@@ -62,6 +64,7 @@ function mediaRow(state, id) {
     if (intent && intent !== 'plan' && intent !== 'watching' && intent !== 'dropped') {
       return null;
     }
+    const onPlan = intent === 'plan';
     return {
       media_type: 'show',
       provider: 'trakt',
@@ -70,6 +73,9 @@ function mediaRow(state, id) {
       movie_saved: null,
       movie_watched: null,
       rating,
+      watchlist_added_at: onPlan
+        ? normalizeWatchlistAddedAt(entry?.watchlistAddedAt)
+        : null,
     };
   }
   if (isCloudMovieId(id)) {
@@ -77,6 +83,7 @@ function mediaRow(state, id) {
     if (!entry || (!entry.saved && !entry.watched && entry.rating == null)) {
       return null;
     }
+    const onWatchlist = Boolean(entry.saved) && !Boolean(entry.watched);
     return {
       media_type: 'movie',
       provider: 'trakt',
@@ -85,6 +92,9 @@ function mediaRow(state, id) {
       movie_saved: Boolean(entry.saved),
       movie_watched: Boolean(entry.watched),
       rating: entry.rating ?? null,
+      watchlist_added_at: onWatchlist
+        ? normalizeWatchlistAddedAt(entry.watchlistAddedAt)
+        : null,
     };
   }
   return null;
@@ -102,7 +112,9 @@ function sameMedia(left, right) {
     && left.show_intent === right.show_intent
     && left.movie_saved === right.movie_saved
     && left.movie_watched === right.movie_watched
-    && left.rating === right.rating;
+    && left.rating === right.rating
+    && (normalizeWatchlistAddedAt(left.watchlist_added_at)
+      === normalizeWatchlistAddedAt(right.watchlist_added_at));
 }
 
 function metaFor(state, episodeId, lookup) {
@@ -304,6 +316,68 @@ export function queueForSync(server, local, lookup, { allowPush = false } = {}) 
   return planQueue(server, local, lookup);
 }
 
+export function ordersFromRemoteRows(items, revisions) {
+  const movie = [];
+  const show = [];
+  (items || [])
+    .slice()
+    .sort((left, right) => Number(left.position) - Number(right.position))
+    .forEach((row) => {
+      if (!row?.media_id) {
+        return;
+      }
+      if (row.media_type === 'movie') {
+        movie.push(row.media_id);
+      } else if (row.media_type === 'show') {
+        show.push(row.media_id);
+      }
+    });
+  const revisionByType = { movie: 0, show: 0 };
+  (revisions || []).forEach((row) => {
+    if (row?.media_type === 'movie' || row?.media_type === 'show') {
+      revisionByType[row.media_type] = Number(row.revision) || 0;
+    }
+  });
+  return {
+    movieWatchlistOrder: uniqueOrderIds(movie),
+    showWatchlistOrder: uniqueOrderIds(show),
+    watchlistOrderMeta: {
+      movie: { revision: revisionByType.movie, dirty: false },
+      show: { revision: revisionByType.show, dirty: false },
+    },
+  };
+}
+
+export function mergeWatchlistOrderState(remoteState, localState) {
+  const remote = reconcileWatchlistOrders(remoteState || normalizeTracking(null));
+  const local = reconcileWatchlistOrders(localState || normalizeTracking(null));
+  const next = { ...remote };
+  ['movie', 'show'].forEach((type) => {
+    const key = type === 'movie' ? 'movieWatchlistOrder' : 'showWatchlistOrder';
+    const localDirty = Boolean(local.watchlistOrderMeta?.[type]?.dirty);
+    if (localDirty) {
+      next[key] = local[key];
+      next.watchlistOrderMeta = {
+        ...(next.watchlistOrderMeta || {}),
+        [type]: {
+          revision: Number(local.watchlistOrderMeta?.[type]?.revision) || 0,
+          dirty: true,
+        },
+      };
+      return;
+    }
+    next[key] = remote[key];
+    next.watchlistOrderMeta = {
+      ...(next.watchlistOrderMeta || {}),
+      [type]: {
+        revision: Number(remote.watchlistOrderMeta?.[type]?.revision) || 0,
+        dirty: false,
+      },
+    };
+  });
+  return reconcileWatchlistOrders(next);
+}
+
 export function applyQueue(base, queue) {
   const next = cloneState(base);
   Object.entries(queue?.media || {}).forEach(([id, op]) => {
@@ -316,10 +390,14 @@ export function applyQueue(base, queue) {
     const row = op.row;
     if (row.media_type === 'show') {
       if (row.show_intent) {
+        const onPlan = row.show_intent === 'plan';
         next.shows[id] = {
           intent: row.show_intent,
           watchedEpisodeIds: next.shows[id]?.watchedEpisodeIds || [],
           rating: row.rating ?? null,
+          watchlistAddedAt: onPlan
+            ? normalizeWatchlistAddedAt(row.watchlist_added_at)
+            : null,
         };
         delete next.showRatings[id];
       } else {
@@ -330,10 +408,14 @@ export function applyQueue(base, queue) {
       }
       return;
     }
+    const onWatchlist = Boolean(row.movie_saved) && !Boolean(row.movie_watched);
     next.movies[id] = {
       saved: Boolean(row.movie_saved),
       watched: Boolean(row.movie_watched),
       rating: row.rating ?? null,
+      watchlistAddedAt: onWatchlist
+        ? normalizeWatchlistAddedAt(row.watchlist_added_at)
+        : null,
     };
   });
   Object.entries(queue?.episodes || {}).forEach(([id, op]) => {
@@ -374,7 +456,7 @@ export function applyQueue(base, queue) {
       delete next.keptEpisodes[id];
       return;
     }
-    next.keptEpisodes[id] = {
+      next.keptEpisodes[id] = {
       showId: row.show_media_id,
       season: row.season_number,
       number: row.episode_number,
@@ -383,10 +465,10 @@ export function applyQueue(base, queue) {
       watchedAt: row.watched_at || null,
     };
   });
-  return next;
+  return reconcileWatchlistOrders(next);
 }
 
-export function stateFromRemote(mediaRows, episodeRows, activityRows = []) {
+export function stateFromRemote(mediaRows, episodeRows, activityRows = [], watchlistOrders = null) {
   const state = normalizeTracking(null);
   const stamps = emptyStamps();
   (mediaRows || []).forEach((row) => {
@@ -396,10 +478,14 @@ export function stateFromRemote(mediaRows, episodeRows, activityRows = []) {
     stamps.media[row.media_id] = row.updated_at || null;
     if (row.media_type === 'show' && isCloudShowId(row.media_id)) {
       if (row.show_intent === 'plan' || row.show_intent === 'watching' || row.show_intent === 'dropped') {
+        const onPlan = row.show_intent === 'plan';
         state.shows[row.media_id] = {
           intent: row.show_intent,
           watchedEpisodeIds: [],
           rating: row.rating ?? null,
+          watchlistAddedAt: onPlan
+            ? normalizeWatchlistAddedAt(row.watchlist_added_at)
+            : null,
         };
       } else if (row.rating != null) {
         state.showRatings[row.media_id] = row.rating;
@@ -410,10 +496,14 @@ export function stateFromRemote(mediaRows, episodeRows, activityRows = []) {
       if (!row.movie_saved && !row.movie_watched && row.rating == null) {
         return;
       }
+      const onWatchlist = Boolean(row.movie_saved) && !Boolean(row.movie_watched);
       state.movies[row.media_id] = {
         saved: Boolean(row.movie_saved),
         watched: Boolean(row.movie_watched),
         rating: row.rating ?? null,
+        watchlistAddedAt: onWatchlist
+          ? normalizeWatchlistAddedAt(row.watchlist_added_at)
+          : null,
       };
     }
   });
@@ -455,7 +545,13 @@ export function stateFromRemote(mediaRows, episodeRows, activityRows = []) {
     }
   });
   state.activityEvents = activityEventsFromRemoteRows(activityRows);
-  return { state, stamps };
+  if (watchlistOrders?.available !== false && (watchlistOrders?.items || watchlistOrders?.revisions)) {
+    const orders = ordersFromRemoteRows(watchlistOrders.items, watchlistOrders.revisions);
+    state.movieWatchlistOrder = orders.movieWatchlistOrder;
+    state.showWatchlistOrder = orders.showWatchlistOrder;
+    state.watchlistOrderMeta = orders.watchlistOrderMeta;
+  }
+  return { state: reconcileWatchlistOrders(state), stamps };
 }
 
 export function mergeRemoteAndLocal(remote, cache, lookup) {
@@ -470,13 +566,18 @@ export function mergeRemoteAndLocal(remote, cache, lookup) {
       demoMode: false,
     });
     return {
-      state,
-      server: { ...remote.state, activityEvents: mergeActivityEvents(remoteActivity, []), onboardingComplete, demoMode: false },
+      state: reconcileWatchlistOrders(state),
+      server: reconcileWatchlistOrders({
+        ...remote.state,
+        activityEvents: mergeActivityEvents(remoteActivity, []),
+        onboardingComplete,
+        demoMode: false,
+      }),
       stamps: remote.stamps || emptyStamps(),
     };
   }
   const queue = planQueue(cache.server, cache.state, lookup);
-  const state = adoptKeptEpisodes({
+  const mergedMedia = adoptKeptEpisodes({
     ...applyQueue(remote.state, queue),
     activityEvents: mergeActivityEvents(remoteActivity, cache.state.activityEvents),
     onboardingComplete,
@@ -484,22 +585,36 @@ export function mergeRemoteAndLocal(remote, cache, lookup) {
   });
   (queue.blocked || []).forEach((episodeId) => {
     if (cache.state.episodeRatings?.[episodeId] != null) {
-      state.episodeRatings[episodeId] = cache.state.episodeRatings[episodeId];
+      mergedMedia.episodeRatings[episodeId] = cache.state.episodeRatings[episodeId];
     }
     if (cache.state.episodeMeta?.[episodeId]) {
-      state.episodeMeta[episodeId] = cache.state.episodeMeta[episodeId];
+      mergedMedia.episodeMeta[episodeId] = cache.state.episodeMeta[episodeId];
     }
   });
+  const state = mergeWatchlistOrderState(mergedMedia, cache.state);
   return {
     state,
-    server: {
+    server: reconcileWatchlistOrders({
       ...remote.state,
       activityEvents: mergeActivityEvents(remoteActivity, []),
       onboardingComplete,
       demoMode: false,
-    },
+    }),
     stamps: remote.stamps || emptyStamps(),
   };
+}
+
+export function watchlistOrderNeedsPush(state, mediaType) {
+  const key = mediaType === 'show' ? 'show' : 'movie';
+  return Boolean(state?.watchlistOrderMeta?.[key]?.dirty);
+}
+
+export function getWatchlistOrderCleanMeta(meta, mediaType, revision) {
+  return markWatchlistOrderClean(meta, mediaType, revision);
+}
+
+export function areWatchlistOrdersEqual(left, right) {
+  return orderIdsEqual(left, right);
 }
 
 function rowSignature(row) {
@@ -517,6 +632,7 @@ function rowSignature(row) {
     row.episode_number ?? null,
     row.watched ?? null,
     row.rating ?? null,
+    normalizeWatchlistAddedAt(row.watchlist_added_at),
   ]);
 }
 
@@ -550,6 +666,7 @@ export function remoteMediaSignature(row) {
     movie_saved: row.movie_saved ?? null,
     movie_watched: row.movie_watched ?? null,
     rating: row.rating ?? null,
+    watchlist_added_at: normalizeWatchlistAddedAt(row.watchlist_added_at),
   };
 }
 
