@@ -112,7 +112,21 @@ expect('graph search filters self rows', graph.includes('row?.user_id !== viewer
 expect('graph never uses service role', !/service_role|SERVICE_ROLE/i.test(graph));
 expect('demo blocked in people panel', read('src/components/social/PeopleDiscoveryPanel.js').includes('demoBlocked'));
 expect('connections screen exists', read('src/app/users/connections.js').includes('listFollowConnections'));
-expect('notifications screen loads rpc', read('src/app/social/notifications.js').includes('listSocialNotifications'));
+const notificationsScreen = read('src/app/social/notifications.js');
+expect('notifications screen loads rpc', notificationsScreen.includes('listSocialNotifications'));
+expect(
+  'notifications follow-back survives focus refetch',
+  notificationsScreen.includes('followBackDoneByActorRef')
+    && notificationsScreen.includes('applyFollowBackState')
+);
+expect(
+  'notifications follow-back marks actor across rows',
+  notificationsScreen.includes('followBackDoneByActorRef.current.add(actorId)')
+);
+expect(
+  'notification row uses followBackCompleted',
+  read('src/components/social/NotificationRow.js').includes('followBackCompleted')
+);
 expect('social badge uses unread count', read('src/app/(tabs)/social.js').includes('getUnreadSocialNotificationCount'));
 expect('profile counts tappable', read('src/app/(tabs)/profile.js').includes('FollowCountsRow'));
 expect('public profile uses relationship button', read('src/components/social/PublicProfileView.js').includes('RelationshipButton'));

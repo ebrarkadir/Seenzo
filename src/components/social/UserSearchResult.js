@@ -42,7 +42,7 @@ function InlineRelationshipControl({ userId, demoBlocked }) {
   const action = resolveRelationshipAction(relationship);
 
   const onPress = async () => {
-    if (demoBlocked?.()) return;
+    if (loading || demoBlocked?.()) return;
     setLoading(true);
     try {
       if (action === RELATIONSHIP.FOLLOWING) {

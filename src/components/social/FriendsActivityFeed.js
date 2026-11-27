@@ -87,7 +87,16 @@ export default function FriendsActivityFeed({
         filter: nextFilter,
       });
       if (requestSeq.current !== seq) return;
-      setItems((current) => (reset ? result.items : [...current, ...result.items]));
+      setItems((current) => {
+        if (reset) {
+          return result.items;
+        }
+        const seen = new Set(current.map((row) => row.id));
+        return [
+          ...current,
+          ...result.items.filter((row) => row?.id && !seen.has(row.id)),
+        ];
+      });
       cursorRef.current = {
         createdAt: result.cursorCreatedAt,
         id: result.cursorId,

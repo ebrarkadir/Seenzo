@@ -65,7 +65,8 @@ function mapRpcError(error, fallback = 'interaction_failed') {
     return markCoded('activity_unavailable', error);
   }
   if (/cannot_like_own/.test(raw)) return markCoded('cannot_like_own', error);
-  if (/invalid_comment|invalid_activity|invalid_parent|invalid_target|invalid_report/.test(raw)) {
+  if (/invalid_report/.test(raw)) return markCoded('invalid_report', error);
+  if (/invalid_comment|invalid_activity|invalid_parent|invalid_target/.test(raw)) {
     return markCoded('invalid_comment', error);
   }
   if (/reply_depth_exceeded/.test(raw)) return markCoded('reply_depth_exceeded', error);

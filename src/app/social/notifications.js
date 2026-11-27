@@ -9,7 +9,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 
@@ -60,6 +60,20 @@ function NotificationsBody() {
   const [actionId, setActionId] = useState(null);
   const [unavailable, setUnavailable] = useState(false);
   const requestSeq = useRef(0);
+  // Survives focus refetch — list payloads do not include outgoing follow state.
+  const followBackDoneByActorRef = useRef(new Set());
+
+  const applyFollowBackState = useCallback((rows) => {
+    const done = followBackDoneByActorRef.current;
+    if (!done.size) {
+      return rows;
+    }
+    return rows.map((row) => (
+      row?.actor?.userId && done.has(row.actor.userId)
+        ? { ...row, followBackCompleted: true }
+        : row
+    ));
+  }, []);
 
   const load = useCallback(async ({ reset = false, soft = false } = {}) => {
     const seq = requestSeq.current + 1;
@@ -70,7 +84,10 @@ function NotificationsBody() {
     try {
       const result = await listSocialNotifications({ offset: nextOffset });
       if (requestSeq.current !== seq) return;
-      setItems((current) => (reset ? result.items : [...current, ...result.items]));
+      setItems((current) => {
+        const merged = reset ? result.items : [...current, ...result.items];
+        return applyFollowBackState(merged);
+      });
       offsetRef.current = reset ? result.items.length : nextOffset + result.items.length;
       setHasMore(result.hasMore);
       setError(null);
@@ -92,37 +109,14 @@ function NotificationsBody() {
         setLoadingMore(false);
       }
     }
-  }, []);
+  }, [applyFollowBackState]);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const result = await listSocialNotifications({ offset: 0 });
-        if (cancelled) return;
-        setItems(result.items);
-        offsetRef.current = result.items.length;
-        setHasMore(result.hasMore);
-        setError(null);
-        setUnavailable(false);
-      } catch (requestError) {
-        if (cancelled) return;
-        if (requestError?.code === 'social_v2_unavailable') {
-          setUnavailable(true);
-          setItems([]);
-          setError(null);
-        } else {
-          setItems([]);
-          setError(requestError);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      offsetRef.current = 0;
+      load({ reset: true });
+    }, [load])
+  );
 
   const guardDemo = () => {
     if (!demoMode) return false;
@@ -213,14 +207,26 @@ function NotificationsBody() {
   };
 
   const onFollowBack = async (item) => {
-    if (guardDemo() || !item?.actor?.userId) return;
+    if (guardDemo() || !item?.actor?.userId || item?.followBackCompleted) return;
+    const actorId = item.actor.userId;
     setActionId(item.id);
     try {
-      await followUser(item.actor.userId);
+      // followUser is idempotent when already following (private request / already_following).
+      await followUser(actorId);
       await markSocialNotificationRead(item.id);
-      setItems((current) => current.map((row) => (
-        row.id === item.id ? { ...row, unread: false } : row
-      )));
+      followBackDoneByActorRef.current.add(actorId);
+      setItems((current) => current.map((row) => {
+        if (row.actor?.userId !== actorId) {
+          return row;
+        }
+        const isTapped = row.id === item.id;
+        return {
+          ...row,
+          unread: isTapped ? false : row.unread,
+          readAt: isTapped ? (row.readAt || new Date().toISOString()) : row.readAt,
+          followBackCompleted: true,
+        };
+      }));
     } catch (requestError) {
       Alert.alert(
         t('social.followErrorTitle'),

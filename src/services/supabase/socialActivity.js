@@ -127,11 +127,12 @@ async function normalizeActivityPage(rows, limit) {
     });
   }
   const pageSize = Math.min(30, Math.max(1, limit));
-  const last = items[items.length - 1] || null;
+  // Advance keyset from the last raw server row so dropped normalize rows do not skew the cursor.
+  const lastRaw = rows[rows.length - 1] || null;
   return {
     items,
-    cursorCreatedAt: last?.createdAt || null,
-    cursorId: last?.id || null,
+    cursorCreatedAt: lastRaw?.created_at || lastRaw?.createdAt || null,
+    cursorId: lastRaw?.id || null,
     // Keyset continues while the server returned a full page (before client normalize drops).
     hasMore: rows.length >= pageSize,
   };

@@ -138,11 +138,11 @@ export async function listProfileReviews({
   const rows = Array.isArray(data) ? data : [];
   const items = rows.map(normalizeProfileReviewRow).filter(Boolean);
   const pageSize = Math.min(30, Math.max(1, limit));
-  const last = items[items.length - 1] || null;
+  const lastRaw = rows[rows.length - 1] || null;
   return {
     items,
-    cursorUpdatedAt: last?.updatedAt || null,
-    cursorId: last?.id || null,
+    cursorUpdatedAt: lastRaw?.updated_at || lastRaw?.updatedAt || null,
+    cursorId: lastRaw?.id || null,
     hasMore: rows.length >= pageSize,
   };
 }

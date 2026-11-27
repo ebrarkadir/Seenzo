@@ -65,8 +65,9 @@ export default function NotificationRow({
           <View style={styles.actions}>
             <RelationshipButton
               compact
-              action={RELATIONSHIP.FOLLOW_BACK}
+              action={item?.followBackCompleted ? RELATIONSHIP.FOLLOWING : RELATIONSHIP.FOLLOW_BACK}
               loading={actionLoading}
+              disabled={Boolean(item?.followBackCompleted)}
               onPress={() => onFollowBack?.(item)}
             />
           </View>
